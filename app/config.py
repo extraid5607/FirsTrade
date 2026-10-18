@@ -32,7 +32,9 @@ def _list(name: str, default: str) -> tuple[str, ...]:
 
 
 def _database_url() -> str:
-    url = os.getenv("DATABASE_URL", "sqlite:///./zeropaper_india.db")
+    url = (os.getenv("DATABASE_URL") or "").strip()
+    if not url:
+        return "sqlite:///./firstrade.db"
     if url.startswith("postgres://"):
         url = "postgresql+psycopg://" + url[len("postgres://"):]
     elif url.startswith("postgresql://"):
