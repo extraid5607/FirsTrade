@@ -6,22 +6,31 @@ import {
   stopAccountPolling, setAccount, startMarketPolling,
 } from './store.js';
 import { renderAuth } from './views/auth.js';
+import { renderWatchlist } from './views/watchlist.js';
 import { renderTrade } from './views/trade.js';
-import { renderJournal } from './views/journal.js';
-import { renderStats } from './views/stats.js';
-import { renderRules } from './views/rules.js';
-import { renderLeaderboard } from './views/leaderboard.js';
-import { renderChain } from './views/chain.js';
+import { renderPositions } from './views/positions.js';
+import { renderTools } from './views/tools.js';
+import { renderAccount } from './views/account.js';
 
 const ROUTES = [
+  ['watchlist', 'Watchlist', renderWatchlist],
   ['trade', 'Trade', renderTrade],
-  ['chain', 'Chain', renderChain],
-  ['journal', 'Journal', renderJournal],
-  ['stats', 'Stats', renderStats],
-  ['rules', 'Rules', renderRules],
-  ['leaderboard', 'Ranks', renderLeaderboard],
+  ['positions', 'Positions', renderPositions],
+  ['tools', 'Tools', renderTools],
+  ['account', 'Account', renderAccount],
 ];
-const ROUTE_TITLES = { trade: 'Trade', chain: 'Option chain', journal: 'Journal', stats: 'Stats', rules: 'Risk rules', leaderboard: 'Leaderboard' };
+const ROUTE_TITLES = {
+  watchlist: 'Watchlist',
+  trade: 'Trade',
+  positions: 'Positions & Orders',
+  tools: 'Tools & Analysis',
+  account: 'Account & Profile',
+  chain: 'Option chain',
+  journal: 'Journal',
+  stats: 'Stats',
+  rules: 'Risk rules',
+  leaderboard: 'Leaderboard',
+};
 
 const root = document.getElementById('app');
 let shell = null;        // { main, nav, acct, banner } while logged in
@@ -29,8 +38,12 @@ let destroyView = null;  // cleanup function of the page that is on screen
 let unsubShell = [];
 
 function routeFromHash() {
-  const id = (location.hash || '').replace(/^#\/?/, '').split(/[?/]/)[0];
-  return ROUTES.some((r) => r[0] === id) ? id : 'trade';
+  const hash = (location.hash || '').replace(/^#\/?/, '').split(/[?/]/)[0];
+  if (['chain', 'journal', 'stats', 'rules', 'leaderboard'].includes(hash)) {
+    return { main: 'tools', sub: hash };
+  }
+  const valid = ROUTES.some((r) => r[0] === hash);
+  return { main: valid ? hash : 'trade', sub: null };
 }
 
 function stopView() {
@@ -148,14 +161,14 @@ function renderLoggedIn() {
 
 function showRoute(moveFocus) {
   if (!shell) return;
-  const id = routeFromHash();
-  const route = ROUTES.find((r) => r[0] === id);
+  const { main: id, sub } = routeFromHash();
+  const route = ROUTES.find((r) => r[0] === id) || ROUTES[1];
   stopView();
   window.scrollTo(0, 0);
   drawNav(id);
-  setTitle(ROUTE_TITLES[id]);
+  setTitle(ROUTE_TITLES[sub || id]);
   try {
-    destroyView = route[2](shell.main) || null;
+    destroyView = route[2](shell.main, sub) || null;
   } catch (e) {
     console.error(e);
     mount(shell.main, h('div', { class: 'page' }, h('div', { class: 'panel empty' },
