@@ -174,28 +174,45 @@ export async function openOrderDialog({
   const sym = symbol || (leg && leg.id);
   if (!sym) return;
 
-  let inst = market(sym);
+  // Explicit option / future detection from parameters and symbol patterns
+  const isOption = (type != null) || (strike != null) || (leg != null) || /\d+(CE|PE)$/i.test(sym);
+  const isFuture = /\d+[A-Z]{3}FUT$/i.test(sym) || sym.endsWith('FUT');
+  const isDeriv = isOption || isFuture;
+  const isEquity = !isDeriv;
+
+  let inst = store.byId[sym] || store.extra[sym];
   if (!inst) {
     try {
       inst = await ensureInstrument(sym);
     } catch (_) {}
   }
-  if (!inst) {
-    toast(`Could not load instrument ${sym}`, 'error');
-    return;
-  }
+  if (!inst) inst = market(sym);
+
+  if (isOption && inst.kind !== 'option') inst = { ...inst, kind: 'option' };
+  if (isFuture && inst.kind !== 'future') inst = { ...inst, kind: 'future' };
 
   const id = `dlg-${++seq}`;
-  const isEquity = inst.kind === 'equity';
-  const lotSize = isEquity ? 1 : ((inst && inst.lot_size) || (leg && leg.lot_size) || 25);
+
+  // Calculate lot size correctly for index & stock derivatives
+  let lotSize = 1;
+  if (!isEquity) {
+    const under = underlying || inst.underlying || (sym.startsWith('BANKNIFTY') ? 'BANKNIFTY' : (sym.startsWith('NIFTY') ? 'NIFTY' : (sym.startsWith('FINNIFTY') ? 'FINNIFTY' : (sym.startsWith('MIDCPNIFTY') ? 'MIDCPNIFTY' : ''))));
+    const defaultLot = under === 'BANKNIFTY' ? 30 : (under === 'FINNIFTY' ? 60 : (under === 'MIDCPNIFTY' ? 120 : (under === 'NIFTY' ? 65 : 25)));
+    lotSize = (inst && inst.lot_size && inst.lot_size > 1) ? inst.lot_size : ((leg && leg.lot_size && leg.lot_size > 1) ? leg.lot_size : defaultLot);
+  }
+
   const tickSize = (inst && inst.tick) || 0.05;
   const initialPrice = (leg && leg.ltp != null) ? leg.ltp : ((store.prices[inst.id] && store.prices[inst.id].p != null) ? store.prices[inst.id].p : (inst.price != null ? inst.price : null));
 
   const prods = (inst && inst.products && inst.products.length) ? inst.products : (isEquity ? ['CNC', 'MIS'] : ['MIS', 'NRML']);
-  const allowedProds = prods.slice();
-  let defaultProd = allowedProds[0] || 'MIS';
+  const allowedProds = prods.filter((p) => isEquity || p !== 'CNC');
+  if (!allowedProds.length) allowedProds.push(isEquity ? 'CNC' : 'MIS');
+
+  let defaultProd = allowedProds[0] || (isEquity ? 'CNC' : 'MIS');
   if (isEquity) {
     defaultProd = defaultSide === 'short' ? 'MIS' : (allowedProds.includes('CNC') ? 'CNC' : allowedProds[0]);
+  } else {
+    defaultProd = allowedProds.includes('MIS') ? 'MIS' : allowedProds[0];
   }
 
   const ui = {
@@ -223,10 +240,11 @@ export async function openOrderDialog({
   } else if (inst.kind === 'future') {
     metaBadges.push(h('span', { class: 'badge accent' }, 'FUT'));
   }
-  if (strike != null) metaBadges.push(h('span', { class: 'badge accent' }, `Strike ${num(strike, 0)}`));
-  if (type) metaBadges.push(h('span', { class: `badge ${type === 'CE' ? 'up' : 'down'}` }, type === 'CE' ? 'CALL' : 'PUT'));
-  if (expiry) metaBadges.push(h('span', { class: 'badge' }, expiry));
-  if (lotSize > 1) metaBadges.push(h('span', { class: 'badge' }, `Lot: ${lotSize}`));
+  if (strike != null || inst.strike != null) metaBadges.push(h('span', { class: 'badge accent' }, `Strike ${num(strike != null ? strike : inst.strike, 0)}`));
+  const optType = type || inst.option_type || (sym.endsWith('CE') ? 'CE' : (sym.endsWith('PE') ? 'PE' : null));
+  if (optType) metaBadges.push(h('span', { class: `badge ${optType === 'CE' ? 'up' : 'down'}` }, optType === 'CE' ? 'CALL' : 'PUT'));
+  if (expiry || inst.expiry) metaBadges.push(h('span', { class: 'badge' }, expiry || inst.expiry));
+  if (!isEquity && lotSize > 1) metaBadges.push(h('span', { class: 'badge' }, `Lot: ${lotSize}`));
 
   const head = h('div', { class: 'dlg-opt-head' },
     h('div', { class: 'dlg-opt-title' },

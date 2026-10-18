@@ -39,7 +39,7 @@ export function createTicket(root) {
   // ---------------------------------------------------------------- helpers
   const mk = () => market(store.symbol);
   const live = () => { const p = store.prices[store.symbol]; return p && p.f ? p.p : null; };
-  const isDeriv = (m) => m && (m.kind === 'future' || m.kind === 'option');
+  const isDeriv = (m) => m && (m.kind === 'future' || m.kind === 'option' || /\d+(CE|PE)$/i.test(m.id) || m.id.endsWith('FUT') || /\d+[A-Z]{3}FUT$/i.test(m.id));
   const marketOpen = () => !store.market || store.market.open !== false;
   const refPrice = () => (ui.type === 'limit' ? parse(ui.limit) : live());
 
@@ -83,7 +83,8 @@ export function createTicket(root) {
 
     fixProduct(m);
     const deriv = isDeriv(m);
-    const lotSize = deriv ? (m.lot_size || 25) : 1;
+    const defaultLot = m.id.startsWith('BANKNIFTY') ? 30 : (m.id.startsWith('FINNIFTY') ? 60 : (m.id.startsWith('MIDCPNIFTY') ? 120 : (m.id.startsWith('NIFTY') ? 65 : 25)));
+    const lotSize = deriv ? ((m.lot_size && m.lot_size > 1) ? m.lot_size : defaultLot) : 1;
     const tickSize = m.tick || 0.05;
     const currentPrice = live();
 
