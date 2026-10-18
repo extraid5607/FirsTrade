@@ -1,0 +1,4 @@
+{"chart": {"result": [{"meta": {"regularMarketPrice": 1211.2, "chartPreviousClose": 1215.0, "regularMarketTime": 1792203000},
+ "timestamp": [1792201200, 1792201260, 1792201320, 1792201380],
+ "indicators": {"quote": [{"open": [1210, 1211, null, 1212], "high": [1212, 1213, null, 1211], "low": [1209, 1210, null, 1213],
+                           "close": [1211, 1212, null, 1212.5], "volume": [100, 200, null, 50]}]}}], "error": null}}

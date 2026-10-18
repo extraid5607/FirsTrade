@@ -1,0 +1,11 @@
+{"status": "SUCCESS", "underlying_ltp": 23146.15, "strikes": {
+ "23000": {"CE": {"greeks": {"delta": 0.62, "gamma": 0.0006, "theta": -9.1, "vega": 11.2, "rho": 3.1, "iv": 13.8},
+                   "trading_symbol": "NIFTY26OCT23000CE", "ltp": 205.5, "open_interest": 1250000, "volume": 880000},
+            "PE": {"greeks": {"delta": -0.38, "gamma": 0.0006, "theta": -8.2, "vega": 11.2, "rho": -2.4, "iv": 14.4},
+                   "trading_symbol": "NIFTY26OCT23000PE", "ltp": 120.0, "open_interest": 2100000, "volume": 1200000}},
+ "23150": {"CE": {"greeks": {"delta": 0.5, "gamma": 0.0007, "theta": -9.9, "vega": 11.5, "rho": 2.9, "iv": 0.139},
+                   "trading_symbol": "NIFTY26OCT23150CE", "ltp": 130.0, "open_interest": 2000000, "volume": 1500000},
+            "PE": {"trading_symbol": "NIFTY26OCT23150PE", "ltp": 128.0, "open_interest": 1800000, "volume": 1400000}},
+ "garbage": {"CE": 5},
+ "23300": {"CE": {"trading_symbol": "NIFTY26OCT23300CE", "ltp": null}}
+}}

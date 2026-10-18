@@ -1,0 +1,21 @@
+{
+  "_note": "Indian trading charges used by the paper account. Verified against Groww's published pricing page (https://groww.in/pricing). Rates are in percent unless the name says otherwise.",
+  "verified": true,
+  "stt_pct": {
+    "delivery_buy": 0.1, "delivery_sell": 0.1,
+    "intraday_sell": 0.025,
+    "future_sell": 0.05,
+    "option_sell_premium": 0.15,
+    "option_exercise_intrinsic": 0.15
+  },
+  "brokerage": {
+    "delivery_flat": 0.0,
+    "intraday_pct": 0.03, "intraday_cap": 20.0,
+    "future_flat": 20.0,
+    "option_flat": 20.0
+  },
+  "exchange_txn_pct": {"equity": 0.00297, "future": 0.00183, "option_premium": 0.03553},
+  "sebi_per_crore": 10.0,
+  "stamp_buy_pct": {"delivery": 0.015, "intraday": 0.003, "future": 0.002, "option": 0.003},
+  "gst_pct": 18.0
+}

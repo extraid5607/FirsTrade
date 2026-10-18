@@ -1,0 +1,33 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 36 36" width="36" height="36" fill="none">
+  <defs>
+    <linearGradient id="ftBg" x1="0" y1="0" x2="36" y2="36" gradientUnits="userSpaceOnUse">
+      <stop offset="0%" stop-color="#1e54e4" />
+      <stop offset="100%" stop-color="#0c2c85" />
+    </linearGradient>
+    <linearGradient id="ftAccent" x1="12" y1="26" x2="28" y2="10" gradientUnits="userSpaceOnUse">
+      <stop offset="0%" stop-color="#00f5a0" />
+      <stop offset="100%" stop-color="#00d287" />
+    </linearGradient>
+  </defs>
+
+  <!-- Container badge with soft rounded corners -->
+  <rect width="36" height="36" rx="8.5" fill="url(#ftBg)" />
+  <rect x="0.75" y="0.75" width="34.5" height="34.5" rx="7.75" stroke="rgba(255,255,255,0.15)" stroke-width="1.5" />
+
+  <!-- Stylized F + T ascending chart geometry -->
+  <!-- Left candlestick/stem -->
+  <rect x="8.5" y="10" width="3.5" height="16" rx="1.5" fill="#ffffff" />
+  
+  <!-- F horizontal crossbar -->
+  <rect x="12" y="16.5" width="7" height="3" rx="1.5" fill="rgba(255,255,255,0.85)" />
+
+  <!-- Top bar of F / T extending into an upward breakout trend arrow -->
+  <path d="M12 11.5 H21.5 L27 11.5" stroke="#ffffff" stroke-width="3" stroke-linecap="round" />
+  
+  <!-- Dynamic upward trend arrow surge (green profit breakout) -->
+  <path d="M15 25 L21 18 L26.5 12.5" stroke="url(#ftAccent)" stroke-width="2.75" stroke-linecap="round" stroke-linejoin="round" />
+  <path d="M22 12.5 H26.5 V17" stroke="url(#ftAccent)" stroke-width="2.75" stroke-linecap="round" stroke-linejoin="round" />
+
+  <!-- Accent glow node at the peak -->
+  <circle cx="26.5" cy="12.5" r="1.75" fill="#00f5a0" />
+</svg>

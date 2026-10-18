@@ -1,0 +1,7 @@
+fastapi>=0.142,<1
+uvicorn[standard]>=0.54,<1
+SQLAlchemy>=2.1,<2.2
+httpx>=0.28,<1
+# Only used when DATABASE_URL points at PostgreSQL (recommended for hosting)
+psycopg[binary]>=3.2,<4
+pyotp>=2.9

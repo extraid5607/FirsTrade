@@ -1,0 +1,11 @@
+{"records": {"expiryDates": ["27-Oct-2026"], "underlyingValue": 23146.15, "data": [
+ {"strikePrice": 23000, "expiryDate": "27-Oct-2026",
+  "CE": {"strikePrice": 23000, "expiryDate": "27-Oct-2026", "openInterest": 19230, "totalTradedVolume": 120000,
+         "impliedVolatility": 13.9, "lastPrice": 205.5, "bidprice": 205.4, "askPrice": 205.9, "underlyingValue": 23146.15},
+  "PE": {"strikePrice": 23000, "expiryDate": "27-Oct-2026", "openInterest": 32300, "totalTradedVolume": 90000,
+         "impliedVolatility": 14.5, "lastPrice": 120.0, "bidprice": 119.9, "askPrice": 120.3, "underlyingValue": 23146.15}},
+ {"strikePrice": 23150, "expiryDate": "27-Oct-2026",
+  "CE": {"openInterest": 30000, "totalTradedVolume": 100000, "impliedVolatility": 0, "lastPrice": 130.0}},
+ {"strikePrice": 23150, "expiryDate": "03-Nov-2026",
+  "CE": {"openInterest": 1, "impliedVolatility": 15, "lastPrice": 999.0}}
+]}}
