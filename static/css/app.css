@@ -684,18 +684,50 @@ dialog::backdrop { background: rgba(8, 14, 28, .55); }
 @media (max-width: 1400px) { .topbar-tools .hide-sm { display: none; } }
 
 /* ------------------------------------------------------------------ Watchlist View */
-.wl-panel { overflow: hidden; margin-top: 10px; }
-.wl-search-bar { padding: 12px 14px; border-bottom: 1px solid var(--line); background: var(--surface); }
+.wl-tabs-bar {
+  display: flex; align-items: center; gap: 8px; margin-top: 10px; margin-bottom: 10px;
+  overflow-x: auto; -webkit-overflow-scrolling: touch; scrollbar-width: none; padding: 2px 2px 6px;
+}
+.wl-tabs-bar::-webkit-scrollbar { display: none; }
+.wl-tab-btn {
+  display: inline-flex; align-items: center; gap: 6px; padding: 7px 14px;
+  border: 1px solid var(--line); border-radius: 20px; background: var(--surface);
+  color: var(--ink-2); font-size: 13px; font-weight: 600; cursor: pointer; white-space: nowrap;
+  transition: all .15s ease;
+}
+.wl-tab-btn:hover { background: var(--surface-2); color: var(--ink); }
+.wl-tab-btn[aria-pressed="true"] {
+  background: var(--accent); border-color: var(--accent); color: var(--accent-ink);
+  box-shadow: 0 2px 8px rgba(28, 79, 214, 0.25);
+}
+.wl-tab-count {
+  font-size: 11px; padding: 1px 6px; border-radius: 10px;
+  background: var(--surface-2); color: var(--ink-2); font-weight: 700;
+}
+.wl-tab-btn[aria-pressed="true"] .wl-tab-count {
+  background: rgba(255, 255, 255, 0.25); color: #fff;
+}
+.wl-add-tab-btn {
+  display: inline-flex; align-items: center; gap: 4px; padding: 7px 12px;
+  border: 1px dashed var(--line); border-radius: 20px; background: transparent;
+  color: var(--ink-3); font-size: 13px; font-weight: 600; cursor: pointer; white-space: nowrap;
+}
+.wl-add-tab-btn:hover { border-color: var(--accent); color: var(--accent); background: var(--surface-2); }
+
+.wl-panel { overflow: hidden; }
+.wl-controls-bar {
+  display: flex; align-items: center; justify-content: space-between; gap: 10px;
+  padding: 10px 14px; border-bottom: 1px solid var(--line); background: var(--surface-2);
+  font-size: 13px;
+}
+.wl-control-actions { display: flex; align-items: center; gap: 6px; margin-left: auto; }
+
+.wl-search-bar { padding: 10px 14px; border-bottom: 1px solid var(--line); background: var(--surface); }
 .msearch-full {
   width: 100%; min-height: 40px; padding: 8px 14px; border-radius: 8px;
   border: 1px solid var(--line); background: var(--surface-2); font-size: 14px;
 }
 .watchlist-list { display: grid; }
-.wl-group-title {
-  padding: 10px 16px 6px; font-size: 12px; font-weight: 700; color: var(--ink-3);
-  text-transform: uppercase; letter-spacing: 0.05em; background: var(--surface-2);
-  border-bottom: 1px solid var(--line);
-}
 .wl-items { display: grid; }
 .wl-row {
   display: flex; align-items: center; justify-content: space-between; width: 100%;
@@ -707,9 +739,31 @@ dialog::backdrop { background: rgba(8, 14, 28, .55); }
 .wl-info { display: grid; gap: 4px; }
 .wl-name { font-size: 15px; font-weight: 650; color: var(--ink); }
 .wl-sub { display: flex; align-items: center; gap: 6px; font-size: 12px; color: var(--ink-3); }
+.wl-row-actions { display: flex; align-items: center; gap: 12px; }
 .wl-numbers { text-align: right; font-variant-numeric: tabular-nums; }
 .wl-price { font-size: 15px; font-weight: 650; color: var(--ink); }
 .wl-chg { font-size: 12px; font-weight: 550; }
+
+.wl-btn-remove {
+  background: transparent; border: 0; color: var(--ink-3);
+  width: 28px; height: 28px; border-radius: 50%; display: grid; place-content: center;
+  font-size: 14px; cursor: pointer; transition: all .12s ease;
+}
+.wl-btn-remove:hover { background: var(--down-bg); color: var(--down); }
+
+.wl-btn-add {
+  display: inline-flex; align-items: center; gap: 4px; padding: 5px 12px;
+  border: 1px solid var(--accent); border-radius: 6px; background: var(--accent-bg);
+  color: var(--accent); font-size: 12.5px; font-weight: 700; cursor: pointer;
+  transition: all .12s ease; white-space: nowrap;
+}
+.wl-btn-add:hover { background: var(--accent); color: var(--accent-ink); }
+
+.wl-btn-added {
+  display: inline-flex; align-items: center; gap: 4px; padding: 5px 10px;
+  border: 1px solid var(--line); border-radius: 6px; background: var(--surface-2);
+  color: var(--up); font-size: 12px; font-weight: 700; cursor: default; white-space: nowrap;
+}
 
 /* ------------------------------------------------------------------ Tools View */
 .tools-header { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 16px; }
