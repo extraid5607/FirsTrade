@@ -102,9 +102,11 @@ export function renderAuth(root, onAuthed) {
         h('span', { class: 'brand' },
           h('img', { src: '/logo.svg', alt: 'FirsTrade logo', class: 'brand-logo' }),
           'FirsTrade')),
-      h('div', null,
+      h('div', { class: 'auth-hero' },
         h('h1', null, 'Learn Indian markets with pretend money'),
-        h('p', { class: 'auth-lead' }, 'Start with ₹10,00,000. Trade Nifty, Bank Nifty and stocks, plus futures and options with a live option chain, and find out what a trade would really have cost you before it costs you anything.'),
+        h('p', { class: 'auth-lead' }, 'Start with ₹10,00,000. Trade Nifty, Bank Nifty and stocks, plus futures and options with a live option chain, and find out what a trade would really have cost you before it costs you anything.')),
+      h('section', { class: 'panel auth-card', 'aria-label': 'Log in or create an account' }, modeSeg, form),
+      h('div', { class: 'auth-details' },
         h('ul', { class: 'auth-points' },
           h('li', null, h('strong', null, 'See your risk before you click. '), 'Set a stop-loss and the order panel shows your lots, margin, charges and reward, all measured in R.'),
           h('li', null, h('strong', null, 'Keep a journal. '), 'Note why you took each trade and how you felt, then see which setups and moods make or lose money.'),
@@ -113,8 +115,7 @@ export function renderAuth(root, onAuthed) {
         h('section', { class: 'panel example' },
           h('h2', null, 'Example: buy with a 1% stop, intraday (MIS)'),
           exampleLadder(),
-          h('p', { class: 'fine' }, 'Example numbers. 1R is what you lose if the stop is hit, charges included. The risk system closes a leveraged position automatically long before your money is gone, so the stop does the real work.'))),
-      h('section', { class: 'panel auth-card', 'aria-label': 'Log in or create an account' }, modeSeg, form)),
+          h('p', { class: 'fine' }, 'Example numbers. 1R is what you lose if the stop is hit, charges included. The risk system closes a leveraged position automatically long before your money is gone, so the stop does the real work.')))),
     strip,
     h('p', { class: 'disclaimer' }, 'FirsTrade uses pretend money and is for learning only. It is not investment advice, there are no prizes or real trades, and results here do not predict real trading results. Prices may be delayed or simulated.'));
 
