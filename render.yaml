@@ -20,3 +20,5 @@ services:
         sync: false
       - key: GROWW_ACCESS_TOKEN
         sync: false
+      - key: DATABASE_URL
+        sync: false
