@@ -3,6 +3,7 @@
 import { api } from '../api.js';
 import { h, mount, num, price, toast, storage } from '../util.js';
 import { store, setSymbol, ensureInstrument } from '../store.js';
+import { openOptionOrderDialog } from '../dialogs.js';
 
 const STRIKE_CHOICES = [5, 8, 12, 20];
 
@@ -25,7 +26,6 @@ export function renderChain(root) {
   let data = null;
   let failed = '';
   let busy = false;
-  let menu = null;     // { id, label, x, y }
 
   const unders = store.markets.filter((m) => m.fno);
   const wanted = queryParam('u');
@@ -43,53 +43,34 @@ export function renderChain(root) {
     STRIKE_CHOICES.map((n) => h('option', { value: String(n), selected: n === state.strikes }, `${n} each side`)));
   const metaEl = h('div', { class: 'chain-meta', 'aria-live': 'polite' });
   const tableWrap = h('div', { class: 'chain-wrap panel' });
-  const menuEl = h('div', { class: 'pop', role: 'dialog', 'aria-label': 'Trade this contract', hidden: true });
   const noteEl = h('p', { class: 'fine' });
 
   mount(root, h('div', { class: 'page' },
     h('div', { class: 'page-head' }, h('h1', null, 'Option chain')),
-    h('p', { class: 'page-sub' }, 'Pick an underlying and an expiry. Click any price to buy or sell that contract.'),
+    h('p', { class: 'page-sub' }, 'Pick an underlying and an expiry. Click any option price to buy or sell directly.'),
     h('div', { class: 'chain-bar' },
       h('label', { class: 'field' }, h('span', { class: 'field-label' }, 'Underlying'), underSel),
       h('label', { class: 'field' }, h('span', { class: 'field-label' }, 'Expiry'), expSel),
       h('label', { class: 'field' }, h('span', { class: 'field-label' }, 'Strikes'), nSel)),
     metaEl,
-    h('div', { style: { position: 'relative' } }, tableWrap, menuEl),
+    tableWrap,
     noteEl));
 
-  function hideMenu() { menu = null; menuEl.hidden = true; }
-
-  async function go(id, side) {
-    hideMenu();
-    try {
-      await ensureInstrument(id);
-      store.pendingSide = side;
-      storage('zp_symbol', id);
-      await setSymbol(id);
-      location.hash = '#/trade';
-    } catch (e) { toast(e.message, 'error'); }
-  }
-
-  function showMenu(leg, label, ev) {
-    const wrap = menuEl.parentElement.getBoundingClientRect();
-    menu = { id: leg.id, label };
-    mount(menuEl,
-      h('div', { class: 'pop-price' }, label),
-      h('button', { type: 'button', class: 'btn sm', on: { click: () => go(leg.id, 'long') } }, 'Buy'),
-      h('button', { type: 'button', class: 'btn sm', on: { click: () => go(leg.id, 'short') } }, 'Sell'),
-      h('button', { type: 'button', class: 'btn sm ghost', on: { click: hideMenu } }, 'Cancel'));
-    menuEl.hidden = false;
-    menuEl.style.left = `${Math.max(8, Math.min(ev.clientX - wrap.left + 8, wrap.width - 200))}px`;
-    menuEl.style.top = `${Math.max(8, ev.clientY - wrap.top - 10)}px`;
-    const first = menuEl.querySelector('button');
-    if (first) first.focus();
-  }
-
-  function ltpCell(leg, label, itm) {
+  function ltpCell(leg, label, itm, strike, optType) {
     if (!leg || !leg.id) return h('td', { class: itm ? 'itm' : '' }, '–');
     return h('td', { class: itm ? 'itm' : '' }, h('button', {
-      type: 'button', class: 'ltp-btn', 'aria-label': `${label}, price ${leg.ltp != null ? leg.ltp : 'unknown'}. Open trade menu`,
-      on: { click: (e) => showMenu(leg, label, e) },
+      type: 'button', class: 'ltp-btn', 'aria-label': `${label}, price ${leg.ltp != null ? leg.ltp : 'unknown'}. Tap to trade`,
+      on: {
+        click: () => openOptionOrderDialog({
+          leg,
+          label,
+          underlying: state.under,
+          expiry: state.expiry,
+          strike,
+          type: optType,
+          defaultSide: 'long',
+        })
+      },
     }, leg.ltp != null ? num(leg.ltp, 2) : '–'));
   }
 
@@ -125,9 +106,9 @@ export function renderChain(root) {
         h('td', { class: `hide-xs ${spot != null && r.strike < spot ? 'itm' : ''}` }, fmtOi(ce.oi)),
         cell(ce.iv, 1, `hide-xs ${spot != null && r.strike < spot ? 'itm' : ''}`),
         cell(ce.delta, 2, `hide-xs ${spot != null && r.strike < spot ? 'itm' : ''}`),
-        ltpCell(ce, `${state.under} ${num(r.strike, 0)} CE`, spot != null && r.strike < spot),
+        ltpCell(ce, `${state.under} ${num(r.strike, 0)} CE`, spot != null && r.strike < spot, r.strike, 'CE'),
         h('td', { class: 'strike' }, num(r.strike, 0)),
-        ltpCell(pe, `${state.under} ${num(r.strike, 0)} PE`, spot != null && r.strike > spot),
+        ltpCell(pe, `${state.under} ${num(r.strike, 0)} PE`, spot != null && r.strike > spot, r.strike, 'PE'),
         cell(pe.delta, 2, `hide-xs ${spot != null && r.strike > spot ? 'itm' : ''}`),
         cell(pe.iv, 1, `hide-xs ${spot != null && r.strike > spot ? 'itm' : ''}`),
         h('td', { class: `hide-xs ${spot != null && r.strike > spot ? 'itm' : ''}` }, fmtOi(pe.oi)));
@@ -164,17 +145,13 @@ export function renderChain(root) {
   }
 
   async function reload() {
-    data = null; failed = ''; hideMenu(); paint();
+    data = null; failed = ''; paint();
     if (await loadExpiries()) await refresh();
   }
 
   underSel.addEventListener('change', () => { state.under = underSel.value; state.expiry = ''; storage('zp_chain_u', state.under); reload(); });
-  expSel.addEventListener('change', () => { state.expiry = expSel.value; data = null; hideMenu(); paint(); refresh(); });
+  expSel.addEventListener('change', () => { state.expiry = expSel.value; data = null; paint(); refresh(); });
   nSel.addEventListener('change', () => { state.strikes = Number(nSel.value); storage('zp_chain_n', String(state.strikes)); data = null; paint(); refresh(); });
-  const onKey = (e) => { if (e.key === 'Escape') hideMenu(); };
-  const onDown = (e) => { if (menu && !menuEl.contains(e.target) && !e.target.closest('.ltp-btn')) hideMenu(); };
-  document.addEventListener('keydown', onKey);
-  document.addEventListener('pointerdown', onDown);
 
   paint();
   reload();
@@ -183,7 +160,5 @@ export function renderChain(root) {
   return function destroy() {
     alive = false;
     clearInterval(timer);
-    document.removeEventListener('keydown', onKey);
-    document.removeEventListener('pointerdown', onDown);
   };
 }
