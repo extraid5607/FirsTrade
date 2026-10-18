@@ -376,6 +376,8 @@ dialog::backdrop { background: rgba(8, 14, 28, .55); }
 .ticket-head { display: flex; align-items: baseline; justify-content: space-between; }
 .ticket-head h2 { font-size: 16px; font-weight: 650; }
 .ticket-sym { color: var(--ink-2); font-weight: 550; }
+.ticket .dlg-opt-head { padding: 0 0 12px 0; border-bottom: 1px solid var(--line); margin-bottom: 2px; }
+.ticket .field-label { font-size: 13px; font-weight: 600; color: var(--ink-2); }
 .field { display: grid; gap: 4px; }
 .field-label { font-size: 13px; font-weight: 550; color: var(--ink-2); }
 .field-hint { font-size: 12px; color: var(--ink-3); }

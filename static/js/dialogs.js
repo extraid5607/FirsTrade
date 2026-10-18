@@ -159,8 +159,9 @@ export function openJournalDialog(trade, onSaved) {
   openDialog(dlg);
 }
 
-// ---------------------------------------------------------------- option order ticket dialog
-export async function openOptionOrderDialog({
+// ---------------------------------------------------------------- order ticket dialog (options, futures & equities)
+export async function openOrderDialog({
+  symbol,
   leg,
   label,
   underlying,
@@ -170,31 +171,42 @@ export async function openOptionOrderDialog({
   defaultSide = 'long',
   onOrderPlaced,
 }) {
-  let inst = market(leg.id);
-  if (!inst || !inst.lot_size || inst.kind === 'equity') {
+  const sym = symbol || (leg && leg.id);
+  if (!sym) return;
+
+  let inst = market(sym);
+  if (!inst) {
     try {
-      inst = await ensureInstrument(leg.id);
+      inst = await ensureInstrument(sym);
     } catch (_) {}
+  }
+  if (!inst) {
+    toast(`Could not load instrument ${sym}`, 'error');
+    return;
   }
 
   const id = `dlg-${++seq}`;
-  const lotSize = (inst && inst.lot_size) || (leg && leg.lot_size) || 25;
+  const isEquity = inst.kind === 'equity';
+  const lotSize = isEquity ? 1 : ((inst && inst.lot_size) || (leg && leg.lot_size) || 25);
   const tickSize = (inst && inst.tick) || 0.05;
-  const initialPrice = leg.ltp != null ? leg.ltp : (inst && inst.price != null ? inst.price : null);
+  const initialPrice = (leg && leg.ltp != null) ? leg.ltp : ((store.prices[inst.id] && store.prices[inst.id].p != null) ? store.prices[inst.id].p : (inst.price != null ? inst.price : null));
+
+  const prods = (inst && inst.products && inst.products.length) ? inst.products : (isEquity ? ['CNC', 'MIS'] : ['MIS', 'NRML']);
+  const allowedProds = prods.slice();
+  let defaultProd = allowedProds[0] || 'MIS';
+  if (isEquity) {
+    defaultProd = defaultSide === 'short' ? 'MIS' : (allowedProds.includes('CNC') ? 'CNC' : allowedProds[0]);
+  }
 
   const ui = {
     side: defaultSide === 'short' ? 'short' : 'long',
-    product: 'MIS',
+    product: defaultProd,
     type: 'market',
     limitPrice: initialPrice != null ? (Math.round(initialPrice / tickSize) * tickSize).toFixed(2) : '',
-    lots: 1,
+    qty: 1,
     sl: '',
     tp: '',
   };
-
-  const prods = (inst && inst.products && inst.products.length) ? inst.products : ['MIS', 'NRML'];
-  const allowedProds = prods.includes('CNC') ? prods : ['MIS', 'NRML'];
-  if (!allowedProds.includes(ui.product)) ui.product = allowedProds[0];
 
   let busy = false;
 
@@ -206,10 +218,15 @@ export async function openOptionOrderDialog({
 
   const priceEl = h('div', { class: 'dlg-opt-price' }, initialPrice != null ? price(inst, initialPrice) : '–');
   const metaBadges = [];
+  if (isEquity) {
+    metaBadges.push(h('span', { class: 'badge' }, 'EQ'));
+  } else if (inst.kind === 'future') {
+    metaBadges.push(h('span', { class: 'badge accent' }, 'FUT'));
+  }
   if (strike != null) metaBadges.push(h('span', { class: 'badge accent' }, `Strike ${num(strike, 0)}`));
   if (type) metaBadges.push(h('span', { class: `badge ${type === 'CE' ? 'up' : 'down'}` }, type === 'CE' ? 'CALL' : 'PUT'));
   if (expiry) metaBadges.push(h('span', { class: 'badge' }, expiry));
-  metaBadges.push(h('span', { class: 'badge' }, `Lot: ${lotSize}`));
+  if (lotSize > 1) metaBadges.push(h('span', { class: 'badge' }, `Lot: ${lotSize}`));
 
   const head = h('div', { class: 'dlg-opt-head' },
     h('div', { class: 'dlg-opt-title' },
@@ -226,7 +243,12 @@ export async function openOptionOrderDialog({
   }, '▲ BUY');
   const sellBtn = h('button', {
     type: 'button', class: 'seg-btn short', 'aria-pressed': String(ui.side === 'short'),
-    on: { click: () => { ui.side = 'short'; render(); schedulePreview(); } },
+    on: { click: () => {
+      ui.side = 'short';
+      if (ui.product === 'CNC') ui.product = 'MIS';
+      render();
+      schedulePreview();
+    } },
   }, '▼ SELL');
   const sideSeg = h('div', { class: 'seg side-seg', role: 'group', 'aria-label': 'Order side' }, buyBtn, sellBtn);
 
@@ -234,9 +256,14 @@ export async function openOptionOrderDialog({
   const prodNote = h('p', { class: 'prod-note' });
   const prodBtns = allowedProds.map((p) => h('button', {
     type: 'button', class: 'seg-btn', 'aria-pressed': String(ui.product === p),
-    on: { click: () => { ui.product = p; render(); schedulePreview(); } },
+    on: { click: () => {
+      ui.product = p;
+      if (ui.product === 'CNC') ui.side = 'long';
+      render();
+      schedulePreview();
+    } },
   }, p));
-  const prodSeg = h('div', { class: 'seg', role: 'group', 'aria-label': 'Product type' }, prodBtns);
+  const prodSeg = h('div', { class: 'seg prod-seg', role: 'group', 'aria-label': 'Product type' }, prodBtns);
 
   // Order Type Selector (Market / Limit)
   const mktBtn = h('button', {
@@ -276,44 +303,52 @@ export async function openOptionOrderDialog({
     h('div', { class: 'stepper' }, limitDec, limitInput, limitInc),
     h('span', { class: 'field-hint' }, ui.side === 'long' ? 'Must be below current LTP for limit buy' : 'Must be above current LTP for limit sell'));
 
-  // Lots & Quantity Stepper
-  const lotInput = h('input', {
-    type: 'text', inputmode: 'numeric', value: String(ui.lots), class: 'stepper-input'
+  // Quantity / Lots Stepper & Chips
+  const qtyChipsValues = isEquity ? [1, 5, 10, 25, 50, 100] : [1, 2, 5, 10];
+  const qtyInput = h('input', {
+    type: 'text', inputmode: 'numeric', value: String(ui.qty), class: 'stepper-input'
   });
-  lotInput.addEventListener('input', () => {
-    const n = parseInt(lotInput.value.replace(/\D/g, ''), 10);
-    ui.lots = Number.isInteger(n) && n > 0 ? Math.min(n, 1000) : 1;
-    renderLots();
+  qtyInput.addEventListener('input', () => {
+    const n = parseInt(qtyInput.value.replace(/\D/g, ''), 10);
+    ui.qty = Number.isInteger(n) && n > 0 ? Math.min(n, 100000) : 1;
+    renderQuantity();
     schedulePreview();
   });
-  const lotDec = h('button', { type: 'button', class: 'stepper-btn', on: { click: () => {
-    if (ui.lots > 1) { ui.lots -= 1; lotInput.value = String(ui.lots); renderLots(); schedulePreview(); }
+  const qtyDec = h('button', { type: 'button', class: 'stepper-btn', on: { click: () => {
+    if (ui.qty > 1) { ui.qty -= 1; qtyInput.value = String(ui.qty); renderQuantity(); schedulePreview(); }
   } } }, '−');
-  const lotInc = h('button', { type: 'button', class: 'stepper-btn', on: { click: () => {
-    ui.lots += 1; lotInput.value = String(ui.lots); renderLots(); schedulePreview();
+  const qtyInc = h('button', { type: 'button', class: 'stepper-btn', on: { click: () => {
+    ui.qty += 1; qtyInput.value = String(ui.qty); renderQuantity(); schedulePreview();
   } } }, '+');
-  const lotChips = [1, 2, 5, 10].map((n) => h('button', {
+  const qtyChips = qtyChipsValues.map((n) => h('button', {
     type: 'button', class: 'chip',
-    on: { click: () => { ui.lots = n; lotInput.value = String(n); renderLots(); schedulePreview(); } },
-  }, `${n} Lot${n > 1 ? 's' : ''}`));
-  const lotSharesHint = h('span', { class: 'field-hint', style: { fontWeight: '600' } });
+    on: { click: () => { ui.qty = n; qtyInput.value = String(n); renderQuantity(); schedulePreview(); } },
+  }, isEquity ? String(n) : `${n} Lot${n > 1 ? 's' : ''}`));
+  const qtySharesHint = h('span', { class: 'field-hint', style: { fontWeight: '600' } });
 
-  function renderLots() {
-    lotSharesHint.textContent = `Total: ${num(ui.lots * lotSize, 0)} shares (${ui.lots} lot${ui.lots > 1 ? 's' : ''} × ${lotSize})`;
+  function renderQuantity() {
+    if (isEquity) {
+      qtySharesHint.textContent = `Total: ${num(ui.qty, 0)} share${ui.qty > 1 ? 's' : ''}`;
+    } else {
+      qtySharesHint.textContent = `Total: ${num(ui.qty * lotSize, 0)} shares (${ui.qty} lot${ui.qty > 1 ? 's' : ''} × ${lotSize})`;
+    }
   }
-  renderLots();
+  renderQuantity();
 
-  const lotsField = h('div', { class: 'field' },
+  const qtyField = h('div', { class: 'field' },
     h('div', { class: 'field-row' },
-      h('span', { class: 'field-label' }, 'Quantity (Lots)'),
-      h('div', { class: 'chips' }, lotChips)),
-    h('div', { class: 'stepper' }, lotDec, lotInput, lotInc),
-    lotSharesHint);
+      h('span', { class: 'field-label' }, isEquity ? 'Quantity (Shares)' : 'Quantity (Lots)'),
+      h('div', { class: 'chips' }, qtyChips)),
+    h('div', { class: 'stepper' }, qtyDec, qtyInput, qtyInc),
+    qtySharesHint);
 
   // Stop-loss & Take-profit (Collapsible)
+  const slPercents = isEquity ? [0.5, 1, 2, 5] : [10, 20, 30];
+  const tpPercents = isEquity ? [1, 2, 3, 5] : [20, 50, 100];
+
   const slIn = h('input', { type: 'text', inputmode: 'decimal', placeholder: 'Stop-loss price (optional)', value: ui.sl });
   slIn.addEventListener('input', () => { ui.sl = slIn.value; schedulePreview(); });
-  const slChips = [10, 20, 30].map((p) => h('button', {
+  const slChips = slPercents.map((p) => h('button', {
     type: 'button', class: 'chip',
     on: { click: () => {
       const ref = (ui.type === 'limit' && parseFloat(ui.limitPrice)) || initialPrice;
@@ -327,7 +362,7 @@ export async function openOptionOrderDialog({
 
   const tpIn = h('input', { type: 'text', inputmode: 'decimal', placeholder: 'Target price (optional)', value: ui.tp });
   tpIn.addEventListener('input', () => { ui.tp = tpIn.value; schedulePreview(); });
-  const tpChips = [20, 50, 100].map((p) => h('button', {
+  const tpChips = tpPercents.map((p) => h('button', {
     type: 'button', class: 'chip',
     on: { click: () => {
       const ref = (ui.type === 'limit' && parseFloat(ui.limitPrice)) || initialPrice;
@@ -360,13 +395,15 @@ export async function openOptionOrderDialog({
   function render() {
     buyBtn.setAttribute('aria-pressed', String(ui.side === 'long'));
     sellBtn.setAttribute('aria-pressed', String(ui.side === 'short'));
+    sellBtn.disabled = ui.product === 'CNC';
 
     prodBtns.forEach((b, idx) => {
       b.setAttribute('aria-pressed', String(allowedProds[idx] === ui.product));
     });
-    if (ui.product === 'MIS') prodNote.textContent = 'MIS: Intraday with ~5x leverage. Auto squared-off at 3:20 PM.';
+    if (ui.product === 'CNC') prodNote.textContent = 'CNC: Delivery product. You pay the full value and can only buy.';
+    else if (ui.product === 'MIS') prodNote.textContent = 'MIS: Intraday with ~5× leverage. Auto squared-off at 3:20 PM.';
     else if (ui.product === 'NRML') prodNote.textContent = 'NRML: Carry forward overnight until expiry date.';
-    else prodNote.textContent = 'CNC: Delivery product.';
+    else prodNote.textContent = '';
 
     mktBtn.setAttribute('aria-pressed', String(ui.type === 'market'));
     lmtBtn.setAttribute('aria-pressed', String(ui.type === 'limit'));
@@ -378,7 +415,8 @@ export async function openOptionOrderDialog({
   function renderSubmit() {
     const verb = ui.type === 'limit' ? (ui.side === 'long' ? 'BUY LIMIT' : 'SELL LIMIT') : (ui.side === 'long' ? 'BUY' : 'SELL');
     submitBtn.className = `btn submit ${ui.side}`;
-    submitBtn.textContent = busy ? 'Placing order…' : `${verb} ${ui.lots} LOT${ui.lots > 1 ? 'S' : ''} · ${label || inst.name}`;
+    const qtyText = isEquity ? `${ui.qty} QTY` : `${ui.qty} LOT${ui.qty > 1 ? 'S' : ''}`;
+    submitBtn.textContent = busy ? 'Placing order…' : `${verb} ${qtyText} · ${label || inst.label || inst.name}`;
   }
 
   function renderPreview(p, err) {
@@ -395,7 +433,7 @@ export async function openOptionOrderDialog({
         h('span', null, 'Margin needed'),
         h('strong', null, `${money(p.margin)} (Free: ${money(Math.max(p.available, 0))})`)),
       h('div', { class: 'opt-preview-row' },
-        h('span', null, 'Contract value'),
+        h('span', null, isEquity ? 'Order value' : 'Contract value'),
         h('strong', null, money(p.value))),
       h('div', { class: 'opt-preview-row' },
         h('span', null, 'Charges to open'),
@@ -412,8 +450,13 @@ export async function openOptionOrderDialog({
       symbol: inst.id,
       side: ui.side,
       product: ui.product,
-      lots: ui.lots,
     };
+    if (isEquity) {
+      q.qty = ui.qty;
+    } else {
+      q.lots = ui.qty;
+    }
+
     if (ui.type === 'limit') {
       const lp = parseOptional(ui.limitPrice);
       if (!lp.value) { renderPreview(null); return; }
@@ -443,8 +486,13 @@ export async function openOptionOrderDialog({
       side: ui.side,
       product: ui.product,
       type: ui.type,
-      lots: ui.lots,
     };
+    if (isEquity) {
+      body.qty = ui.qty;
+    } else {
+      body.lots = ui.qty;
+    }
+
     if (ui.type === 'limit') {
       const lp = parseOptional(ui.limitPrice);
       if (lp.error || !lp.value) {
@@ -465,7 +513,8 @@ export async function openOptionOrderDialog({
       const r = await api('/api/orders', { method: 'POST', body });
       setAccount(r.account);
       const actionText = r.result.kind === 'order' ? 'Limit order placed for' : (ui.side === 'long' ? 'Bought' : 'Sold');
-      toast(`${actionText} ${ui.lots} lot${ui.lots > 1 ? 's' : ''} of ${label || inst.name}!`, 'ok');
+      const unitText = isEquity ? `${ui.qty} share${ui.qty > 1 ? 's' : ''}` : `${ui.qty} lot${ui.qty > 1 ? 's' : ''}`;
+      toast(`${actionText} ${unitText} of ${label || inst.label || inst.name}!`, 'ok');
       dlg.close();
       if (onOrderPlaced) onOrderPlaced(r);
     } catch (e) {
@@ -488,7 +537,7 @@ export async function openOptionOrderDialog({
       h('span', { class: 'field-label' }, 'Order Type'),
       typeSeg),
     limitField,
-    lotsField,
+    qtyField,
     targetsWrap,
     previewBox,
     errEl);
@@ -503,3 +552,7 @@ export async function openOptionOrderDialog({
   openDialog(dlg);
   schedulePreview();
 }
+
+// Alias for backwards compatibility
+export const openOptionOrderDialog = openOrderDialog;
+

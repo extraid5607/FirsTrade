@@ -4,6 +4,7 @@ import { h, mount, price, pct, tone, arrow, sizeText, cssVar, storage, toast, de
 import { store, on, setSymbol, setTimeframe, market } from '../store.js';
 import { createPriceChart } from '../chart.js';
 import { createTicket } from '../ticket.js';
+import { openOrderDialog } from '../dialogs.js';
 
 const TFS = [['1m', '1m'], ['5m', '5m'], ['15m', '15m'], ['1h', '1h'], ['1d', '1D']];
 const TF_SEC = { '1m': 60, '5m': 300, '15m': 900, '1h': 3600, '1d': 86400 };
@@ -109,10 +110,8 @@ export function renderTrade(root) {
     type: 'button', class: 'trade-action-btn buy', 'aria-label': 'Buy order',
     on: {
       click: () => {
-        if (ticket) {
-          ticket.setSide('long');
-          ticketRoot.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
-        }
+        if (ticket) ticket.setSide('long');
+        openOrderDialog({ symbol: store.symbol, defaultSide: 'long' });
       }
     }
   },
@@ -123,10 +122,8 @@ export function renderTrade(root) {
     type: 'button', class: 'trade-action-btn sell', 'aria-label': 'Sell order',
     on: {
       click: () => {
-        if (ticket) {
-          ticket.setSide('short');
-          ticketRoot.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
-        }
+        if (ticket) ticket.setSide('short');
+        openOrderDialog({ symbol: store.symbol, defaultSide: 'short' });
       }
     }
   },

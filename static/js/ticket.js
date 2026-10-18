@@ -1,18 +1,14 @@
-// Order ticket + risk ladder. All the maths comes from the server (/api/risk/size), so what
-// you see in the preview is exactly what the engine will enforce.
+// Order ticket for FirsTrade.
+// Redesigned to match the clean Option Chain trade modal layout.
 import { api } from './api.js';
-import { h, mount, debounce, num, money, pct, rMult, price, sizeText, toast } from './util.js';
+import { h, mount, debounce, num, money, pct, price, toast } from './util.js';
 import { store, on, emit, market, setAccount } from './store.js';
 
 const SETUPS = ['Breakout', 'Pullback', 'Reversal', 'Range', 'Trend follow', 'News', 'Other'];
-const SL_CHIPS = [0.5, 1, 2, 5];
-const SL_CHIPS_OPTION = [10, 20, 30];
-const TP_CHIPS = [1, 2, 3];
-const PRODUCT_TEXT = {
-  CNC: 'Delivery: you pay the full value and can only buy.',
-  MIS: 'Intraday: about 5× leverage. Closed automatically at 3:20 pm.',
-  NRML: 'Futures and options you can hold overnight.',
-};
+const SL_CHIPS_EQUITY = [0.5, 1, 2, 5];
+const SL_CHIPS_DERIV = [10, 20, 30];
+const TP_CHIPS_EQUITY = [1, 2, 3, 5];
+const TP_CHIPS_DERIV = [20, 50, 100];
 
 function parse(v) {
   const n = parseFloat(String(v).replace(/,/g, ''));
@@ -21,11 +17,19 @@ function parse(v) {
 
 export function createTicket(root) {
   const ui = {
-    side: 'long', type: 'market', sizeBy: 'qty', product: '',
-    limit: '', sl: '', tp: '', risk: '1', qty: '1', setup: '', note: '',
+    side: 'long',
+    product: '',
+    type: 'market',
+    limit: '',
+    qty: 1,
+    sl: '',
+    tp: '',
+    setup: '',
+    note: '',
   };
   if (store.pendingSide) { ui.side = store.pendingSide; store.pendingSide = null; }
-  let preview = null;      // last server preview
+
+  let preview = null;
   let previewErr = '';
   let reqId = 0;
   let busy = false;
@@ -35,175 +39,305 @@ export function createTicket(root) {
   // ---------------------------------------------------------------- helpers
   const mk = () => market(store.symbol);
   const live = () => { const p = store.prices[store.symbol]; return p && p.f ? p.p : null; };
-  const isDeriv = (m) => m.kind === 'future' || m.kind === 'option';
+  const isDeriv = (m) => m && (m.kind === 'future' || m.kind === 'option');
   const marketOpen = () => !store.market || store.market.open !== false;
   const refPrice = () => (ui.type === 'limit' ? parse(ui.limit) : live());
 
   function fixProduct(m) {
-    const list = m.products || [];
-    if (!list.includes(ui.product)) ui.product = list[0] || '';
-    if (ui.product === 'CNC') ui.side = 'long';
-  }
-
-  function seg(options, value, onPick, cls = '') {
-    return h('div', { class: `seg ${cls}`, role: 'group' }, options.map(([val, label, extra, disabled]) =>
-      h('button', {
-        type: 'button', class: `seg-btn ${extra || ''}`, 'aria-pressed': String(val === value),
-        disabled: disabled || null,
-        on: { click: () => onPick(val) },
-      }, label)));
-  }
-
-  function field(label, input, hint) {
-    return h('label', { class: 'field' },
-      h('span', { class: 'field-label' }, label),
-      input,
-      hint ? h('span', { class: 'field-hint' }, hint) : null);
-  }
-
-  function textInput(key, placeholder, attrs = {}) {
-    const el = h('input', {
-      type: 'text', inputmode: 'decimal', autocomplete: 'off', spellcheck: 'false',
-      placeholder, value: ui[key], ...attrs,
-    });
-    el.addEventListener('input', () => { ui[key] = el.value; schedule(); });
-    refs[key] = el;
-    return el;
+    const list = (m && m.products && m.products.length) ? m.products : (isDeriv(m) ? ['MIS', 'NRML'] : ['CNC', 'MIS']);
+    if (!list.includes(ui.product)) {
+      ui.product = (ui.side === 'short' && !isDeriv(m)) ? 'MIS' : list[0];
+    }
+    if (ui.product === 'CNC' && ui.side === 'short') {
+      ui.product = 'MIS';
+    }
   }
 
   // ---------------------------------------------------------------- rendering
   function render() {
     const m = mk();
     if (!m) return;
-    refs.preview = null; refs.ladder = null;
+    refs.preview = null;
     const user = store.me.user;
 
+    // Index cannot be traded directly
     if (m.tradable === false) {
       const fno = m.fno;
+      const ltp = live();
       mount(root,
-        h('div', { class: 'ticket-head' }, h('h2', null, 'New order'), h('span', { class: 'ticket-sym' }, m.name)),
-        h('div', { class: 'empty' },
-          h('strong', null, `${m.name} is an index`),
+        h('div', { class: 'dlg-opt-head', style: { padding: '0 0 12px 0', borderBottom: '1px solid var(--line)' } },
+          h('div', { class: 'dlg-opt-title' },
+            h('h2', { style: { fontSize: '18px', fontWeight: '700' } }, m.name),
+            h('div', { class: 'dlg-opt-meta' }, h('span', { class: 'badge' }, 'INDEX'))),
+          h('div', { class: 'dlg-opt-price-box' },
+            h('div', null,
+              h('span', { class: 'fine' }, 'LTP '),
+              h('div', { class: 'dlg-opt-price' }, ltp != null ? price(m, ltp) : '–')))),
+        h('div', { class: 'empty', style: { padding: '24px 14px', textAlign: 'center' } },
+          h('strong', { style: { display: 'block', fontSize: '15px', marginBottom: '6px' } }, `${m.name} is an Index`),
           'An index cannot be bought or sold directly. Trade its futures or options instead.',
-          fno ? h('div', { style: { display: 'grid', gap: '8px', marginTop: '12px' } },
-            h('a', { class: 'btn primary', href: `#/chain?u=${encodeURIComponent(m.id)}` }, 'Open the option chain')) : null));
+          fno ? h('div', { style: { display: 'grid', gap: '8px', marginTop: '14px' } },
+            h('a', { class: 'btn primary', href: `#/chain?u=${encodeURIComponent(m.id)}` }, 'Open Option Chain')) : null));
       return;
     }
 
     fixProduct(m);
-    const products = m.products || [];
     const deriv = isDeriv(m);
-    const sellOk = ui.product !== 'CNC';
-    const sideBtns = seg([['long', '▲ BUY', 'long'], ['short', '▼ SELL', 'short', !sellOk]], ui.side, (v) => { ui.side = v; render(); schedule(); }, 'side-seg');
-    const typeBtns = seg([['market', 'Market'], ['limit', 'Limit']], ui.type, (v) => { ui.type = v; render(); schedule(); });
-    const sizeBtns = seg([['risk', 'Risk %'], ['qty', deriv ? 'Lots' : 'Quantity']], ui.sizeBy, (v) => { ui.sizeBy = v; render(); schedule(); });
-    const prodBtns = products.length > 1
-      ? seg(products.map((p) => [p, p]), ui.product, (v) => { ui.product = v; render(); schedule(); }, 'prod-seg')
-      : null;
+    const lotSize = deriv ? (m.lot_size || 25) : 1;
+    const tickSize = m.tick || 0.05;
+    const currentPrice = live();
 
-    const slList = m.kind === 'option' ? SL_CHIPS_OPTION : SL_CHIPS;
-    const slChips = h('div', { class: 'chips', 'aria-label': 'Stop-loss distance' },
-      slList.map((d) => h('button', { type: 'button', class: 'chip', on: { click: () => setSlPct(d) } }, `${d}%`)));
-    const tpChips = h('div', { class: 'chips', 'aria-label': 'Target as a multiple of risk' },
-      TP_CHIPS.map((r) => h('button', { type: 'button', class: 'chip', on: { click: () => setTpR(r) } }, `${r}R`)));
+    // 1. Header with Symbol, Badges and Live LTP
+    const metaBadges = [];
+    if (!deriv) {
+      metaBadges.push(h('span', { class: 'badge' }, 'EQ'));
+    } else if (m.kind === 'future') {
+      metaBadges.push(h('span', { class: 'badge accent' }, 'FUT'));
+    } else if (m.kind === 'option') {
+      metaBadges.push(h('span', { class: `badge ${m.option_type === 'CE' ? 'up' : 'down'}` }, m.option_type === 'CE' ? 'CALL' : 'PUT'));
+      if (m.strike) metaBadges.push(h('span', { class: 'badge accent' }, `Strike ${num(m.strike, 0)}`));
+    }
+    if (deriv && lotSize > 1) metaBadges.push(h('span', { class: 'badge' }, `Lot: ${lotSize}`));
 
+    refs.priceEl = h('div', { class: 'dlg-opt-price' }, currentPrice != null ? price(m, currentPrice) : '–');
+    const head = h('div', { class: 'dlg-opt-head', style: { padding: '0 0 12px 0', borderBottom: '1px solid var(--line)' } },
+      h('div', { class: 'dlg-opt-title' },
+        h('h2', { style: { fontSize: '18px', fontWeight: '700' } }, m.label || m.name),
+        h('div', { class: 'dlg-opt-meta' }, metaBadges)),
+      h('div', { class: 'dlg-opt-price-box' },
+        h('div', null, h('span', { class: 'fine' }, 'LTP '), refs.priceEl)));
+
+    // 2. Buy / Sell Toggle
+    const buyBtn = h('button', {
+      type: 'button', class: 'seg-btn long', 'aria-pressed': String(ui.side === 'long'),
+      on: { click: () => { ui.side = 'long'; render(); schedule(); } },
+    }, '▲ BUY');
+    const sellBtn = h('button', {
+      type: 'button', class: 'seg-btn short', 'aria-pressed': String(ui.side === 'short'),
+      on: { click: () => {
+        ui.side = 'short';
+        if (ui.product === 'CNC') ui.product = 'MIS';
+        render();
+        schedule();
+      } },
+    }, '▼ SELL');
+    const sideSeg = h('div', { class: 'seg side-seg', role: 'group', 'aria-label': 'Order side' }, buyBtn, sellBtn);
+
+    // 3. Product Selector
+    const products = (m.products && m.products.length) ? m.products : (deriv ? ['MIS', 'NRML'] : ['CNC', 'MIS']);
+    const prodBtns = products.map((p) => h('button', {
+      type: 'button', class: 'seg-btn', 'aria-pressed': String(ui.product === p),
+      on: { click: () => {
+        ui.product = p;
+        if (ui.product === 'CNC') ui.side = 'long';
+        render();
+        schedule();
+      } },
+    }, p));
+    const prodSeg = h('div', { class: 'seg prod-seg', role: 'group', 'aria-label': 'Product type' }, prodBtns);
+    let prodDesc = '';
+    if (ui.product === 'CNC') prodDesc = 'CNC: Delivery product. You pay the full value and can only buy.';
+    else if (ui.product === 'MIS') prodDesc = 'MIS: Intraday with ~5× leverage. Auto squared-off at 3:20 PM.';
+    else if (ui.product === 'NRML') prodDesc = 'NRML: Carry forward overnight until expiry date.';
+    const prodNote = h('p', { class: 'prod-note' }, prodDesc);
+
+    // 4. Order Type Selector (Market / Limit)
+    const mktBtn = h('button', {
+      type: 'button', class: 'seg-btn', 'aria-pressed': String(ui.type === 'market'),
+      on: { click: () => { ui.type = 'market'; render(); schedule(); } },
+    }, 'Market');
+    const lmtBtn = h('button', {
+      type: 'button', class: 'seg-btn', 'aria-pressed': String(ui.type === 'limit'),
+      on: { click: () => {
+        ui.type = 'limit';
+        if (!ui.limit && currentPrice != null) ui.limit = (Math.round(currentPrice / tickSize) * tickSize).toFixed(2);
+        render();
+        schedule();
+      } },
+    }, 'Limit');
+    const typeSeg = h('div', { class: 'seg', role: 'group', 'aria-label': 'Order type' }, mktBtn, lmtBtn);
+
+    // Limit price stepper
+    const limitInput = h('input', {
+      type: 'text', inputmode: 'decimal', placeholder: 'Limit price', value: ui.limit, class: 'stepper-input'
+    });
+    limitInput.addEventListener('input', () => { ui.limit = limitInput.value; schedule(); });
+    const limitDec = h('button', { type: 'button', class: 'stepper-btn', on: { click: () => {
+      const cur = parseFloat(ui.limit) || currentPrice || 0;
+      ui.limit = Math.max(0.05, cur - tickSize).toFixed(2);
+      limitInput.value = ui.limit;
+      schedule();
+    } } }, '−');
+    const limitInc = h('button', { type: 'button', class: 'stepper-btn', on: { click: () => {
+      const cur = parseFloat(ui.limit) || currentPrice || 0;
+      ui.limit = (cur + tickSize).toFixed(2);
+      limitInput.value = ui.limit;
+      schedule();
+    } } }, '+');
+    const limitField = h('div', { class: 'field', style: { display: ui.type === 'limit' ? 'grid' : 'none' } },
+      h('span', { class: 'field-label' }, 'Limit Price (₹)'),
+      h('div', { class: 'stepper' }, limitDec, limitInput, limitInc),
+      h('span', { class: 'field-hint' }, ui.side === 'long' ? 'Must be below current LTP for limit buy' : 'Must be above current LTP for limit sell'));
+
+    // 5. Quantity Stepper & Chips
+    const qtyChipsValues = deriv ? [1, 2, 5, 10] : [1, 5, 10, 25, 50, 100];
+    const qtyInput = h('input', {
+      type: 'text', inputmode: 'numeric', value: String(ui.qty), class: 'stepper-input'
+    });
+    qtyInput.addEventListener('input', () => {
+      const n = parseInt(qtyInput.value.replace(/\D/g, ''), 10);
+      ui.qty = Number.isInteger(n) && n > 0 ? Math.min(n, 100000) : 1;
+      renderQuantityText();
+      schedule();
+    });
+    const qtyDec = h('button', { type: 'button', class: 'stepper-btn', on: { click: () => {
+      if (ui.qty > 1) { ui.qty -= 1; qtyInput.value = String(ui.qty); renderQuantityText(); schedule(); }
+    } } }, '−');
+    const qtyInc = h('button', { type: 'button', class: 'stepper-btn', on: { click: () => {
+      ui.qty += 1; qtyInput.value = String(ui.qty); renderQuantityText(); schedule();
+    } } }, '+');
+    const qtyChips = qtyChipsValues.map((n) => h('button', {
+      type: 'button', class: 'chip',
+      on: { click: () => { ui.qty = n; qtyInput.value = String(n); renderQuantityText(); schedule(); } },
+    }, deriv ? `${n} Lot${n > 1 ? 's' : ''}` : String(n)));
+    const qtyHint = h('span', { class: 'field-hint', style: { fontWeight: '600' } });
+
+    function renderQuantityText() {
+      if (deriv) {
+        qtyHint.textContent = `Total: ${num(ui.qty * lotSize, 0)} shares (${ui.qty} lot${ui.qty > 1 ? 's' : ''} × ${lotSize})`;
+      } else {
+        qtyHint.textContent = `Total: ${num(ui.qty, 0)} share${ui.qty > 1 ? 's' : ''}`;
+      }
+    }
+    renderQuantityText();
+
+    const qtyField = h('div', { class: 'field' },
+      h('div', { class: 'field-row' },
+        h('span', { class: 'field-label' }, deriv ? 'Quantity (Lots)' : 'Quantity (Shares)'),
+        h('div', { class: 'chips' }, qtyChips)),
+      h('div', { class: 'stepper' }, qtyDec, qtyInput, qtyInc),
+      qtyHint);
+
+    // 6. Stop-loss & Target (Collapsible)
+    const slPercents = deriv ? SL_CHIPS_DERIV : SL_CHIPS_EQUITY;
+    const tpPercents = deriv ? TP_CHIPS_DERIV : TP_CHIPS_EQUITY;
+
+    const slIn = h('input', { type: 'text', inputmode: 'decimal', placeholder: 'Stop-loss price (optional)', value: ui.sl });
+    slIn.addEventListener('input', () => { ui.sl = slIn.value; schedule(); });
+    refs.sl = slIn;
+    const slChips = slPercents.map((p) => h('button', {
+      type: 'button', class: 'chip',
+      on: { click: () => {
+        const ref = refPrice();
+        if (!ref) { toast('Wait for live price or enter limit price.', 'error'); return; }
+        const v = ui.side === 'long' ? ref * (1 - p / 100) : ref * (1 + p / 100);
+        ui.sl = (Math.round(v / tickSize) * tickSize).toFixed(2);
+        slIn.value = ui.sl;
+        schedule();
+      } },
+    }, `−${p}%`));
+
+    const tpIn = h('input', { type: 'text', inputmode: 'decimal', placeholder: 'Target price (optional)', value: ui.tp });
+    tpIn.addEventListener('input', () => { ui.tp = tpIn.value; schedule(); });
+    refs.tp = tpIn;
+    const tpChips = tpPercents.map((p) => h('button', {
+      type: 'button', class: 'chip',
+      on: { click: () => {
+        const ref = refPrice();
+        if (!ref) { toast('Wait for live price or enter limit price.', 'error'); return; }
+        const v = ui.side === 'long' ? ref * (1 + p / 100) : ref * (1 - p / 100);
+        ui.tp = (Math.round(v / tickSize) * tickSize).toFixed(2);
+        tpIn.value = ui.tp;
+        schedule();
+      } },
+    }, `+${p}%`));
+
+    const targetsWrap = h('details', { class: 'journal-fold' },
+      h('summary', null, 'Stop-loss & Target (optional)'),
+      h('div', { style: { display: 'grid', gap: '10px', padding: '10px 12px 14px' } },
+        h('div', { class: 'field' },
+          h('div', { class: 'field-row' }, h('span', { class: 'field-label' }, 'Stop-loss price'), h('div', { class: 'chips' }, slChips)),
+          slIn),
+        h('div', { class: 'field' },
+          h('div', { class: 'field-row' }, h('span', { class: 'field-label' }, 'Target price'), h('div', { class: 'chips' }, tpChips)),
+          tpIn)));
+
+    // 7. Preview Box
+    refs.preview = h('div', { class: 'opt-preview-card' });
+
+    // 8. Submit button & messages
+    refs.submit = h('button', { type: 'button', class: `btn submit ${ui.side}`, on: { click: submit } });
+    refs.msg = h('p', { class: 'ticket-msg', role: 'status' });
+
+    // 9. Journal section (Optional)
     const setupSel = h('select', { 'aria-label': 'Setup' },
       h('option', { value: '' }, 'No setup'),
       SETUPS.map((s) => h('option', { value: s, selected: ui.setup === s }, s)));
     setupSel.addEventListener('change', () => { ui.setup = setupSel.value; });
     const noteIn = h('input', { type: 'text', maxlength: '500', placeholder: 'Why this trade?', value: ui.note });
     noteIn.addEventListener('input', () => { ui.note = noteIn.value; });
+    const journalWrap = h('details', { class: 'journal-fold' },
+      h('summary', null, 'Journal notes (optional)'),
+      h('div', { class: 'journal-fields', style: { display: 'grid', gap: '8px', padding: '10px 12px 14px' } }, setupSel, noteIn));
 
-    refs.preview = h('div', { class: 'preview', 'aria-live': 'polite' });
-    refs.ladder = h('div', { class: 'ladder-wrap' });
-    refs.submit = h('button', { type: 'button', class: `btn submit ${ui.side}`, on: { click: submit } });
-    refs.msg = h('p', { class: 'ticket-msg', role: 'status' });
-
-    const qtyLabel = deriv ? `Lots (1 lot = ${num(m.lot_size, 0)})` : 'Quantity (shares)';
-
+    // Mount full ticket
     mount(root,
-      h('div', { class: 'ticket-head' },
-        h('h2', null, 'New order'),
-        h('span', { class: 'ticket-sym' }, m.label || m.name)),
-      sideBtns,
-      prodBtns,
-      ui.product ? h('p', { class: 'prod-note' }, PRODUCT_TEXT[ui.product] || '') : null,
-      typeBtns,
-      ui.type === 'limit'
-        ? field('Limit price', textInput('limit', price(m, live())), ui.side === 'long' ? 'Must be below the current price' : 'Must be above the current price')
-        : null,
+      head,
+      sideSeg,
       h('div', { class: 'field' },
-        h('div', { class: 'field-row' }, h('span', { class: 'field-label' }, 'Stop-loss'), slChips),
-        textInput('sl', 'Price'),
-      ),
+        h('span', { class: 'field-label' }, 'Product'),
+        prodSeg,
+        prodNote),
       h('div', { class: 'field' },
-        h('div', { class: 'field-row' }, h('span', { class: 'field-label' }, 'Take-profit'), tpChips),
-        textInput('tp', 'Price (optional)'),
-      ),
-      sizeBtns,
-      ui.sizeBy === 'risk'
-        ? field('Risk per trade (% of equity)', textInput('risk', '1'), 'Size is set so the stop costs this much, charges included. Whole lots or shares only.')
-        : field(qtyLabel, textInput('qty', deriv ? '1' : 'Shares', { inputmode: 'numeric' })),
-      refs.ladder,
+        h('span', { class: 'field-label' }, 'Order Type'),
+        typeSeg),
+      limitField,
+      qtyField,
+      targetsWrap,
       refs.preview,
-      h('details', { class: 'journal-fold' },
-        h('summary', null, 'Journal (optional)'),
-        h('div', { class: 'journal-fields' }, setupSel, noteIn)),
+      journalWrap,
       refs.submit,
       refs.msg,
-      h('p', { class: 'fine' }, user.settings.require_sl ? 'Your rules require a stop-loss on every trade.' : 'Tip: trades with a stop-loss give you R-multiples in your stats.'),
-    );
+      h('p', { class: 'fine', style: { fontSize: '12px', color: 'var(--ink-3)', margin: '4px 0 0' } },
+        user && user.settings && user.settings.require_sl ? 'Your rules require a stop-loss on every trade.' : 'Tip: set a stop-loss to manage risk and track R-multiples.'));
+
     renderSubmit();
     renderPreview();
   }
 
-  function setSlPct(d) {
-    const p = refPrice();
-    if (!p) { toast('Wait for the price (or enter a limit price) first.', 'error'); return; }
-    const v = ui.side === 'long' ? p * (1 - d / 100) : p * (1 + d / 100);
-    ui.sl = (Math.round(v / 0.05) * 0.05).toFixed(2);
-    refs.sl.value = ui.sl;
-    schedule();
-  }
-
-  function setTpR(r) {
-    const p = refPrice();
-    const sl = parse(ui.sl);
-    if (!p || !sl) { toast('Set a stop-loss first. The target is measured in multiples of the risk.', 'error'); return; }
-    const dist = Math.abs(p - sl) * r;
-    ui.tp = (Math.round((ui.side === 'long' ? p + dist : p - dist) / 0.05) * 0.05).toFixed(2);
-    refs.tp.value = ui.tp;
-    schedule();
-  }
-
   // ---------------------------------------------------------------- preview
-  const schedule = debounce(fetchPreview, 220);
+  const schedule = debounce(fetchPreview, 200);
 
   function params() {
     const m = mk();
     if (!m || m.tradable === false || !ui.product) return null;
+    const deriv = isDeriv(m);
     const q = { symbol: m.id, side: ui.side, product: ui.product };
-    const entry = ui.type === 'limit' ? parse(ui.limit) : null;
-    if (ui.type === 'limit') { if (!entry) return null; q.entry = entry; }
+
+    if (ui.type === 'limit') {
+      const entry = parse(ui.limit);
+      if (!entry) return null;
+      q.entry = entry;
+    }
     const sl = parse(ui.sl), tp = parse(ui.tp);
     if (sl) q.stop = sl;
     if (tp) q.tp = tp;
-    if (ui.sizeBy === 'risk') {
-      const r = parse(ui.risk);
-      if (!r || !sl) return null;
-      q.risk_pct = r;
-    } else {
-      const n = parse(ui.qty);
-      if (!n || !Number.isInteger(n)) return null;
-      if (isDeriv(m)) q.lots = n; else q.qty = n;
-    }
+
+    const n = ui.qty;
+    if (!n || !Number.isInteger(n) || n <= 0) return null;
+    if (deriv) q.lots = n; else q.qty = n;
+
     return q;
   }
 
   async function fetchPreview() {
     const q = params();
     emitDraft();
-    if (!q) { preview = null; previewErr = ''; renderPreview(); renderSubmit(); return; }
+    if (!q) {
+      preview = null; previewErr = '';
+      renderPreview(); renderSubmit();
+      return;
+    }
     const mine = ++reqId;
     try {
       const r = await api('/api/risk/size', { params: q });
@@ -227,92 +361,40 @@ export function createTicket(root) {
     });
   }
 
-  function row(label, value, cls = '') {
-    return h('div', { class: `pv-row ${cls}` }, h('span', null, label), h('strong', null, value));
-  }
-
   function renderPreview() {
     if (!refs.preview) return;
     const m = mk();
     if (!preview) {
       mount(refs.preview,
         previewErr
-          ? h('p', { class: 'pv-error' }, previewErr)
-          : h('p', { class: 'pv-empty' }, ui.sizeBy === 'risk' ? 'Enter a stop-loss and a risk % to see your size.' : 'Enter a whole number to see margin and risk.'));
-      renderLadder();
+          ? h('span', { class: 'opt-preview-warn' }, previewErr)
+          : h('span', { class: 'fine' }, 'Enter quantity to preview margin and charges.'));
       return;
     }
     const p = preview;
-    const units = { kind: m.kind, lot_size: m.lot_size, qty: p.qty };
+    const deriv = isDeriv(m);
     mount(refs.preview,
-      row('Size', sizeText(units)),
-      row('Position value', money(p.value)),
-      row('Margin needed', `${money(p.margin)} of ${money(Math.max(p.available, 0))} free`),
-      p.risk != null ? row('Risk at stop', `${money(p.risk)} (${pct(p.risk_pct)})`, 'risk') : null,
-      p.rr != null ? row('Reward : risk', `${num(p.rr, 2)} : 1`) : null,
-      p.liq_price != null ? row('Auto-exit near', price(m, p.liq_price)) : null,
-      row('Charges to open', money(p.fees_open, { decimals: 2 }), 'fee'),
-      p.fees_round_trip != null ? row('Charges, round trip', money(p.fees_round_trip, { decimals: 2 }), 'fee') : null,
-      p.warnings.length ? h('ul', { class: 'pv-warn' }, p.warnings.map((w) => h('li', null, w))) : null);
-    renderLadder();
-  }
-
-  // The risk ladder: auto-exit, stop, entry and target on one price scale, labelled in R.
-  function renderLadder() {
-    const wrap = refs.ladder;
-    if (!wrap) return;
-    const m = mk();
-    const p = preview;
-    const sl = parse(ui.sl), tp = parse(ui.tp);
-    const entry = p ? p.entry : refPrice();
-    if (!entry || (!sl && !tp && !p)) { mount(wrap); return; }
-
-    const risk = p && p.risk ? p.risk : null;
-    const items = [{ key: 'entry', name: 'Entry', price: entry, r: 0 }];
-    if (sl) items.push({ key: 'sl', name: 'Stop', price: sl, r: risk ? -1 : null });
-    if (tp) items.push({ key: 'tp', name: 'Target', price: tp, r: p && p.rr != null ? p.rr : null });
-    if (p && p.liq_price != null) {
-      const loss = Math.abs(entry - p.liq_price) * p.qty;
-      items.push({ key: 'liq', name: 'Auto-exit', price: p.liq_price, r: risk ? -loss / risk : null });
-    }
-
-    const H = 190, PAD = 16;
-    const prices = items.map((i) => i.price);
-    let hi = Math.max(...prices), lo = Math.min(...prices);
-    if (hi === lo) { hi += 1; lo -= 1; }
-    const span = hi - lo;
-    const y = (v) => PAD + ((hi - v) / span) * (H - 2 * PAD);
-    items.forEach((i) => { i.y = y(i.price); i.ly = i.y; });
-
-    // keep labels readable: spread them at least 34px apart without moving the ticks
-    const sorted = [...items].sort((a, b) => a.y - b.y);
-    for (let i = 1; i < sorted.length; i++) if (sorted[i].ly < sorted[i - 1].ly + 34) sorted[i].ly = sorted[i - 1].ly + 34;
-    const overflow = sorted.length ? sorted[sorted.length - 1].ly - (H - 6) : 0;
-    if (overflow > 0) {
-      sorted[sorted.length - 1].ly -= overflow;
-      for (let i = sorted.length - 2; i >= 0; i--) if (sorted[i].ly > sorted[i + 1].ly - 34) sorted[i].ly = sorted[i + 1].ly - 34;
-    }
-
-    const zone = (a, b, cls) => h('div', { class: `zone ${cls}`, style: { top: `${Math.min(a, b)}px`, height: `${Math.max(2, Math.abs(a - b))}px` } });
-    const byKey = Object.fromEntries(items.map((i) => [i.key, i]));
-    const zones = [];
-    if (byKey.sl) zones.push(zone(byKey.entry.y, byKey.sl.y, 'zone-risk'));
-    if (byKey.tp) zones.push(zone(byKey.entry.y, byKey.tp.y, 'zone-reward'));
-    if (byKey.liq && byKey.sl) zones.push(zone(byKey.sl.y, byKey.liq.y, 'zone-liq'));
-    else if (byKey.liq) zones.push(zone(byKey.entry.y, byKey.liq.y, 'zone-liq'));
-
-    mount(wrap,
-      h('div', { class: 'ladder', style: { height: `${H}px` }, role: 'img', 'aria-label': 'Risk ladder: auto-exit, stop, entry and target on one price scale' },
-        h('div', { class: 'rail' }),
-        zones,
-        items.map((i) => h('span', { class: `tick tick-${i.key}`, style: { top: `${i.y}px` } })),
-        items.map((i) => {
-          const dist = ((i.price - entry) / entry) * 100;
-          return h('div', { class: `rung rung-${i.key}`, style: { top: `${i.ly}px` } },
-            h('span', { class: 'rung-name' }, i.name),
-            h('span', { class: 'rung-price' }, price(m, i.price)),
-            h('span', { class: 'rung-r' }, i.key === 'entry' ? '' : [i.r != null ? rMult(i.r, 1) : '', i.r != null ? ' · ' : '', pct(dist, { sign: true, decimals: 2 })]));
-        })));
+      h('div', { class: 'opt-preview-row' },
+        h('span', null, 'Margin needed'),
+        h('strong', null, `${money(p.margin)} (Free: ${money(Math.max(p.available, 0))})`)),
+      h('div', { class: 'opt-preview-row' },
+        h('span', null, deriv ? 'Contract value' : 'Order value'),
+        h('strong', null, money(p.value))),
+      h('div', { class: 'opt-preview-row' },
+        h('span', null, 'Charges to open'),
+        h('strong', null, money(p.fees_open, { decimals: 2 }))),
+      p.risk != null ? h('div', { class: 'opt-preview-row' },
+        h('span', null, 'Risk at stop'),
+        h('strong', null, `${money(p.risk)} (${pct(p.risk_pct)})`)) : null,
+      p.rr != null ? h('div', { class: 'opt-preview-row' },
+        h('span', null, 'Reward : risk'),
+        h('strong', null, `${num(p.rr, 2)} : 1`)) : null,
+      p.liq_price != null ? h('div', { class: 'opt-preview-row' },
+        h('span', null, 'Auto-exit near'),
+        h('strong', null, price(m, p.liq_price))) : null,
+      p.warnings && p.warnings.length
+        ? h('div', { class: 'opt-preview-warn' }, p.warnings.join(' · '))
+        : null);
   }
 
   // ---------------------------------------------------------------- submit
@@ -329,10 +411,14 @@ export function createTicket(root) {
     const b = refs.submit;
     if (!b) return;
     const m = mk();
-    const verb = ui.type === 'limit' ? (ui.side === 'long' ? 'PLACE LIMIT BUY' : 'PLACE LIMIT SELL') : (ui.side === 'long' ? 'BUY' : 'SELL');
-    b.textContent = busy ? 'Sending…' : `${verb} ${m.label || m.name}`;
+    if (!m) return;
+    const deriv = isDeriv(m);
+    const verb = ui.type === 'limit' ? (ui.side === 'long' ? 'BUY LIMIT' : 'SELL LIMIT') : (ui.side === 'long' ? 'BUY' : 'SELL');
+    const qtyText = deriv ? `${ui.qty} LOT${ui.qty > 1 ? 'S' : ''}` : `${ui.qty} QTY`;
+    b.textContent = busy ? 'Placing order…' : `${verb} ${qtyText} · ${m.label || m.name}`;
     b.className = `btn submit ${ui.side}`;
     b.disabled = !canSubmit();
+
     const acct = store.account;
     let msg = '';
     if (!marketOpen()) {
@@ -343,26 +429,28 @@ export function createTicket(root) {
     } else if (acct && acct.locked) {
       msg = 'Daily loss limit reached. New trades unlock on the next trading day.';
     }
-    refs.msg.textContent = msg;
+    if (refs.msg) refs.msg.textContent = msg;
   }
 
   async function submit() {
     if (!canSubmit()) return;
     const m = mk();
+    const deriv = isDeriv(m);
     const body = {
       symbol: m.id, side: ui.side, product: ui.product, type: ui.type,
       sl: parse(ui.sl), tp: parse(ui.tp), setup: ui.setup, note: ui.note,
     };
     if (ui.type === 'limit') body.limit_price = parse(ui.limit);
-    if (ui.sizeBy === 'risk') body.risk_pct = parse(ui.risk);
-    else if (isDeriv(m)) body.lots = parse(ui.qty); else body.qty = parse(ui.qty);
+    if (deriv) body.lots = ui.qty; else body.qty = ui.qty;
+
     busy = true; renderSubmit();
     try {
       const r = await api('/api/orders', { method: 'POST', body });
       setAccount(r.account);
       const name = m.label || m.name;
-      toast(r.result.kind === 'order' ? `Limit order placed on ${name}.` : `${ui.side === 'long' ? 'Bought' : 'Sold'} ${name}.`, 'ok');
-      ui.sl = ''; ui.tp = ''; ui.note = ''; ui.qty = '1';
+      const unitText = deriv ? `${ui.qty} lot${ui.qty > 1 ? 's' : ''}` : `${ui.qty} shares`;
+      toast(r.result.kind === 'order' ? `Limit order placed for ${unitText} of ${name}.` : `${ui.side === 'long' ? 'Bought' : 'Sold'} ${unitText} of ${name}!`, 'ok');
+      ui.sl = ''; ui.tp = ''; ui.note = ''; ui.qty = 1;
       preview = null;
       render();
       emitDraft();
@@ -375,7 +463,7 @@ export function createTicket(root) {
 
   // ---------------------------------------------------------------- wiring
   unsub.push(on('symbol', () => {
-    ui.sl = ''; ui.tp = ''; ui.limit = ''; ui.qty = '1';
+    ui.sl = ''; ui.tp = ''; ui.limit = ''; ui.qty = 1;
     if (store.pendingSide) { ui.side = store.pendingSide; store.pendingSide = null; }
     ui.product = '';
     preview = null; previewErr = '';
@@ -387,10 +475,16 @@ export function createTicket(root) {
   let lastRefresh = 0;
   unsub.push(on('prices', () => {
     const l = live();
+    if (refs.priceEl && l != null) {
+      const m = mk();
+      if (m) refs.priceEl.textContent = price(m, l);
+    }
     if ((l === null) !== (lastLive === null)) renderSubmit();
     lastLive = l;
-    // market-order previews drift with the price: refresh them every few seconds
-    if (ui.type === 'market' && params() && Date.now() - lastRefresh > 4000) { lastRefresh = Date.now(); schedule(); }
+    if (ui.type === 'market' && params() && Date.now() - lastRefresh > 4000) {
+      lastRefresh = Date.now();
+      schedule();
+    }
   }));
 
   render();
@@ -400,12 +494,14 @@ export function createTicket(root) {
     destroy() { schedule.cancel(); unsub.forEach((f) => f()); emit('draft', null); mount(root); },
     setSide(side) {
       if (side !== 'long' && side !== 'short') return;
-      if (ui.product === 'CNC' && side === 'short') return;
+      const m = mk();
+      if (m && m.products && !isDeriv(m) && side === 'short' && ui.product === 'CNC') {
+        ui.product = 'MIS';
+      }
       ui.side = side;
       render();
       schedule();
     },
-    // Used by the chart: clicking a price sets the stop or the target.
     setField(kind, value) {
       if (!refs.sl) return;
       const v = (Math.round(Number(value) / 0.05) * 0.05).toFixed(2);
