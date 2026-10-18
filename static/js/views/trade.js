@@ -4,7 +4,6 @@ import { h, mount, price, pct, tone, arrow, sizeText, cssVar, storage, toast, de
 import { store, on, setSymbol, setTimeframe, market } from '../store.js';
 import { createPriceChart } from '../chart.js';
 import { createTicket } from '../ticket.js';
-import { createDock } from '../dock.js';
 
 const TFS = [['1m', '1m'], ['5m', '5m'], ['15m', '15m'], ['1h', '1h'], ['1d', '1D']];
 const TF_SEC = { '1m': 60, '5m': 300, '15m': 900, '1h': 3600, '1d': 86400 };
@@ -24,10 +23,9 @@ export function renderTrade(root) {
 
   const marketsEl = h('aside', { class: 'panel markets', 'aria-label': 'Instruments' });
   const chartPanel = h('section', { class: 'panel chart-panel', 'aria-label': 'Price chart' });
-  const dockRoot = h('section', { class: 'panel dock', 'aria-label': 'Positions, orders and history' });
   const ticketRoot = h('aside', { class: 'panel ticket', 'aria-label': 'Order ticket' });
   mount(root, h('div', { class: 'page' },
-    h('div', { class: 'workspace' }, marketsEl, h('div', { class: 'chart-col' }, chartPanel, dockRoot), ticketRoot)));
+    h('div', { class: 'workspace' }, marketsEl, h('div', { class: 'chart-col' }, chartPanel), ticketRoot)));
 
   // ---------------------------------------------------------------- instrument list + search
   let rows = {};
@@ -103,14 +101,47 @@ export function renderTrade(root) {
   const box = h('div', { class: 'chart-box' });
   const noteEl = h('div', { class: 'chart-note' }, 'Loading chart…');
   box.append(noteEl);
+
+  let ticket = null;
+  const buyBtnPrice = h('span', { class: 'trade-action-price' }, '–');
+  const sellBtnPrice = h('span', { class: 'trade-action-price' }, '–');
+  const buyBtn = h('button', {
+    type: 'button', class: 'trade-action-btn buy', 'aria-label': 'Buy order',
+    on: {
+      click: () => {
+        if (ticket) {
+          ticket.setSide('long');
+          ticketRoot.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+        }
+      }
+    }
+  },
+    h('span', { class: 'trade-action-label' }, '▲ BUY'),
+    buyBtnPrice
+  );
+  const sellBtn = h('button', {
+    type: 'button', class: 'trade-action-btn sell', 'aria-label': 'Sell order',
+    on: {
+      click: () => {
+        if (ticket) {
+          ticket.setSide('short');
+          ticketRoot.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+        }
+      }
+    }
+  },
+    h('span', { class: 'trade-action-label' }, '▼ SELL'),
+    sellBtnPrice
+  );
+  const actionBar = h('div', { class: 'trade-action-bar' }, buyBtn, sellBtn);
+
   mount(chartPanel,
     h('div', { class: 'chart-head' }, h('div', { class: 'chart-title' }, titleEl, priceEl, chgEl), tfSeg),
     fnoEl,
     box,
-    h('p', { class: 'chart-tip' }, 'Tip: click the chart to set a stop-loss or take-profit at that price. Times are India time.'));
+    actionBar);
 
   let chart = null;
-  let ticket = null;
   if (window.LightweightCharts) {
     chart = createPriceChart(box);
   } else {
@@ -128,7 +159,17 @@ export function renderTrade(root) {
     const m = market(store.symbol);
     const q = store.prices[store.symbol];
     titleEl.textContent = title(m);
-    priceEl.textContent = q ? price(m, q.p) : '–';
+    const pStr = q ? price(m, q.p) : '–';
+    priceEl.textContent = pStr;
+    buyBtnPrice.textContent = pStr;
+    sellBtnPrice.textContent = pStr;
+    if (m && m.tradable === false) {
+      buyBtn.disabled = true;
+      sellBtn.disabled = true;
+    } else {
+      buyBtn.disabled = false;
+      sellBtn.disabled = false;
+    }
     if (q && !q.f) { chgEl.textContent = 'Market closed'; chgEl.className = 'chart-chg muted'; }
     else if (q && q.c != null) { chgEl.textContent = `${arrow(q.c)} ${pct(q.c, { sign: true })} today`.replace('  ', ' ').trim(); chgEl.className = `chart-chg ${tone(q.c)}`; }
     else { chgEl.textContent = ''; chgEl.className = 'chart-chg'; }
@@ -213,29 +254,6 @@ export function renderTrade(root) {
     chart.setLines(spec);
   }
 
-  // click on the chart -> small menu to use that price as stop-loss or take-profit
-  let pop = null;
-  function hidePop() { if (pop) { pop.remove(); pop = null; } }
-  if (chart) {
-    chart.onClick((p, pt) => {
-      hidePop();
-      const m = market(store.symbol);
-      pop = h('div', { class: 'pop', role: 'dialog', 'aria-label': 'Use this price' },
-        h('div', { class: 'pop-price' }, price(m, p)),
-        h('button', { type: 'button', class: 'btn sm', on: { click: () => { ticket && ticket.setField('sl', p); toast(`Stop-loss set to ${price(m, p)}`, 'info'); hidePop(); } } }, 'Use as stop-loss'),
-        h('button', { type: 'button', class: 'btn sm', on: { click: () => { ticket && ticket.setField('tp', p); toast(`Take-profit set to ${price(m, p)}`, 'info'); hidePop(); } } }, 'Use as take-profit'),
-        h('button', { type: 'button', class: 'btn sm ghost', on: { click: hidePop } }, 'Cancel'));
-      box.append(pop);
-      pop.style.left = `${Math.max(8, Math.min(pt.x + 12, box.clientWidth - 206))}px`;
-      pop.style.top = `${Math.max(8, Math.min(pt.y - 50, box.clientHeight - 148))}px`;
-    });
-  }
-  const onKey = (e) => { if (e.key === 'Escape') hidePop(); };
-  const onDown = (e) => { if (pop && !pop.contains(e.target)) hidePop(); };
-  document.addEventListener('keydown', onKey);
-  document.addEventListener('pointerdown', onDown);
-  cleanups.push(() => { document.removeEventListener('keydown', onKey); document.removeEventListener('pointerdown', onDown); });
-
   // ---------------------------------------------------------------- wiring
   unsub.push(on('prices', () => {
     paintMarkets();
@@ -243,7 +261,7 @@ export function renderTrade(root) {
     const q = store.prices[store.symbol];
     if (chart && q && q.f) chart.tick(q.p);
   }));
-  unsub.push(on('symbol', () => { hidePop(); draft = null; paintMarkets(); paintHead(); drawFno(); loadCandles(); syncLines(); }));
+  unsub.push(on('symbol', () => { draft = null; paintMarkets(); paintHead(); drawFno(); loadCandles(); syncLines(); }));
   unsub.push(on('account', syncLines));
   unsub.push(on('draft', (d) => { draft = d; syncLines(); }));
   unsub.push(on('theme', () => { if (chart) { chart.applyTheme(); syncLines(); } }));
@@ -253,7 +271,6 @@ export function renderTrade(root) {
   paintHead();
   drawFno();
   ticket = createTicket(ticketRoot);
-  const dock = createDock(dockRoot);
   loadCandles();
   syncLines();
 
@@ -262,7 +279,6 @@ export function renderTrade(root) {
     cleanups.forEach((f) => f());
     runSearch.cancel && runSearch.cancel();
     ticket.destroy();
-    dock.destroy();
     if (chart) chart.destroy();
   };
 }

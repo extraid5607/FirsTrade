@@ -280,13 +280,31 @@ dialog::backdrop { background: rgba(8, 14, 28, .55); }
 .chart-head .seg-btn { min-width: 38px; padding: 0 8px; }
 .chart-box { position: relative; height: clamp(300px, 50vh, 540px); background: var(--chart-bg); }
 .chart-note { position: absolute; inset: 0; display: grid; place-content: center; gap: 8px; text-align: center; padding: 16px; color: var(--ink-2); background: var(--chart-bg); z-index: 2; }
-.chart-tip { padding: 6px 14px; border-top: 1px solid var(--line); font-size: 12px; color: var(--ink-3); }
-.pop {
-  position: absolute; z-index: 5; display: grid; gap: 4px; min-width: 190px; padding: 8px;
-  border: 1px solid var(--line); border-radius: 8px; background: var(--surface); box-shadow: 0 6px 24px rgba(0, 0, 0, .2);
+.trade-action-bar {
+  display: grid; grid-template-columns: 1fr 1fr; gap: 12px; padding: 12px 14px;
+  background: var(--surface); border-top: 1px solid var(--line);
 }
-.pop-price { padding: 0 4px 4px; font-weight: 650; font-variant-numeric: tabular-nums; }
-.pop .btn { justify-content: flex-start; }
+.trade-action-btn {
+  display: flex; flex-direction: column; align-items: center; justify-content: center;
+  gap: 2px; min-height: 52px; padding: 8px 14px; border: 0; border-radius: 8px;
+  font-weight: 700; cursor: pointer; transition: transform .08s ease, filter .15s ease, box-shadow .15s ease;
+}
+.trade-action-btn:active { transform: scale(0.98); }
+.trade-action-btn.buy {
+  background: var(--up); color: var(--on-up);
+  box-shadow: 0 2px 8px rgba(8, 122, 92, 0.28);
+}
+.trade-action-btn.buy:hover:not(:disabled) { filter: brightness(1.08); }
+.trade-action-btn.sell {
+  background: var(--down); color: var(--on-down);
+  box-shadow: 0 2px 8px rgba(193, 54, 42, 0.28);
+}
+.trade-action-btn.sell:hover:not(:disabled) { filter: brightness(1.08); }
+.trade-action-btn:disabled {
+  opacity: 0.45; cursor: not-allowed; filter: grayscale(0.5);
+}
+.trade-action-label { font-size: 15px; letter-spacing: 0.04em; text-transform: uppercase; }
+.trade-action-price { font-size: 13px; font-weight: 600; opacity: 0.95; font-variant-numeric: tabular-nums; }
 
 .dock { overflow: hidden; }
 .dock-tabs { display: flex; gap: 2px; padding: 6px 8px 0; border-bottom: 1px solid var(--line); }
@@ -330,10 +348,16 @@ dialog::backdrop { background: rgba(8, 14, 28, .55); }
 .journal-fold { border: 1px solid var(--line); border-radius: 8px; }
 .journal-fold summary { padding: 8px 12px; cursor: pointer; font-weight: 550; color: var(--ink-2); }
 .journal-fields { display: grid; gap: 8px; padding: 0 12px 12px; }
-.btn.submit { min-height: 42px; font-size: 15px; width: 100%; }
-.btn.submit.long { background: var(--up); border-color: var(--up); color: var(--on-up); }
-.btn.submit.short { background: var(--down); border-color: var(--down); color: var(--on-down); }
-.btn.submit:hover:not(:disabled) { filter: brightness(1.07); }
+.side-seg { min-height: 42px; padding: 3px; }
+.side-seg .seg-btn { min-height: 36px; font-size: 14px; font-weight: 700; letter-spacing: 0.03em; }
+.btn.submit {
+  min-height: 48px; font-size: 16px; font-weight: 700; width: 100%; border-radius: 8px;
+  letter-spacing: 0.03em; transition: transform .08s ease, filter .15s ease, box-shadow .15s ease;
+}
+.btn.submit:active:not(:disabled) { transform: scale(0.99); }
+.btn.submit.long { background: var(--up); border-color: var(--up); color: var(--on-up); box-shadow: 0 2px 10px rgba(8, 122, 92, 0.32); }
+.btn.submit.short { background: var(--down); border-color: var(--down); color: var(--on-down); box-shadow: 0 2px 10px rgba(193, 54, 42, 0.32); }
+.btn.submit:hover:not(:disabled) { filter: brightness(1.08); }
 .ticket-msg { min-height: 1.2em; font-size: 13px; color: var(--down); }
 
 /* ------------------------------------------------------------------ risk ladder
@@ -488,20 +512,22 @@ dialog::backdrop { background: rgba(8, 14, 28, .55); }
   }
   .disclaimer { padding: 0 14px 40px; font-size: 11.5px; }
 
-  /* phone order: markets, chart, order ticket, positions */
+  /* phone order: chart, order ticket, markets */
   .workspace { display: flex; flex-direction: column; gap: 12px; }
-  .chart-col { display: flex; flex-direction: column; gap: 12px; width: 100%; min-width: 0; }
+  .chart-col { order: 1; display: flex; flex-direction: column; gap: 12px; width: 100%; min-width: 0; }
   .chart-panel { width: 100%; min-width: 0; }
   .chart-head { display: flex; flex-direction: column; align-items: stretch; gap: 8px; padding: 10px 12px; }
   .chart-title { display: flex; align-items: baseline; justify-content: space-between; width: 100%; }
   .chart-head .seg { margin-left: 0; width: 100%; display: flex; }
   .chart-head .seg-btn { flex: 1; min-width: 0; min-height: 30px; padding: 0; font-size: 12px; }
   .chart-box { height: clamp(260px, 42vh, 380px); width: 100%; }
-  .ticket { position: static; max-height: none; width: 100%; box-sizing: border-box; padding: 14px 12px; }
+  .ticket { order: 2; position: static; max-height: none; width: 100%; box-sizing: border-box; padding: 14px 12px; }
+  .markets { order: 3; }
   .dock { width: 100%; min-width: 0; box-sizing: border-box; }
 }
 
 @media (max-width: 760px) {
+  .workspace .markets { display: none; }
   body { padding-bottom: calc(66px + env(safe-area-inset-bottom)); }
   .topbar { padding: 0 10px; gap: 8px; min-height: 50px; justify-content: space-between; }
   .brand { font-size: 16px; gap: 6px; }

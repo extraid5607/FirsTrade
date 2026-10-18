@@ -21,8 +21,8 @@ function parse(v) {
 
 export function createTicket(root) {
   const ui = {
-    side: 'long', type: 'market', sizeBy: 'risk', product: '',
-    limit: '', sl: '', tp: '', risk: '1', qty: '', setup: '', note: '',
+    side: 'long', type: 'market', sizeBy: 'qty', product: '',
+    limit: '', sl: '', tp: '', risk: '1', qty: '1', setup: '', note: '',
   };
   if (store.pendingSide) { ui.side = store.pendingSide; store.pendingSide = null; }
   let preview = null;      // last server preview
@@ -94,7 +94,7 @@ export function createTicket(root) {
     const products = m.products || [];
     const deriv = isDeriv(m);
     const sellOk = ui.product !== 'CNC';
-    const sideBtns = seg([['long', 'Buy', 'long'], ['short', 'Sell', 'short', !sellOk]], ui.side, (v) => { ui.side = v; render(); schedule(); }, 'side-seg');
+    const sideBtns = seg([['long', '▲ BUY', 'long'], ['short', '▼ SELL', 'short', !sellOk]], ui.side, (v) => { ui.side = v; render(); schedule(); }, 'side-seg');
     const typeBtns = seg([['market', 'Market'], ['limit', 'Limit']], ui.type, (v) => { ui.type = v; render(); schedule(); });
     const sizeBtns = seg([['risk', 'Risk %'], ['qty', deriv ? 'Lots' : 'Quantity']], ui.sizeBy, (v) => { ui.sizeBy = v; render(); schedule(); });
     const prodBtns = products.length > 1
@@ -329,7 +329,7 @@ export function createTicket(root) {
     const b = refs.submit;
     if (!b) return;
     const m = mk();
-    const verb = ui.type === 'limit' ? `Place limit ${ui.side === 'long' ? 'buy' : 'sell'}` : (ui.side === 'long' ? 'Buy' : 'Sell');
+    const verb = ui.type === 'limit' ? (ui.side === 'long' ? 'PLACE LIMIT BUY' : 'PLACE LIMIT SELL') : (ui.side === 'long' ? 'BUY' : 'SELL');
     b.textContent = busy ? 'Sending…' : `${verb} ${m.label || m.name}`;
     b.className = `btn submit ${ui.side}`;
     b.disabled = !canSubmit();
@@ -362,7 +362,7 @@ export function createTicket(root) {
       setAccount(r.account);
       const name = m.label || m.name;
       toast(r.result.kind === 'order' ? `Limit order placed on ${name}.` : `${ui.side === 'long' ? 'Bought' : 'Sold'} ${name}.`, 'ok');
-      ui.sl = ''; ui.tp = ''; ui.note = ''; ui.qty = '';
+      ui.sl = ''; ui.tp = ''; ui.note = ''; ui.qty = '1';
       preview = null;
       render();
       emitDraft();
@@ -375,7 +375,7 @@ export function createTicket(root) {
 
   // ---------------------------------------------------------------- wiring
   unsub.push(on('symbol', () => {
-    ui.sl = ''; ui.tp = ''; ui.limit = ''; ui.qty = '';
+    ui.sl = ''; ui.tp = ''; ui.limit = ''; ui.qty = '1';
     if (store.pendingSide) { ui.side = store.pendingSide; store.pendingSide = null; }
     ui.product = '';
     preview = null; previewErr = '';
@@ -398,6 +398,13 @@ export function createTicket(root) {
 
   return {
     destroy() { schedule.cancel(); unsub.forEach((f) => f()); emit('draft', null); mount(root); },
+    setSide(side) {
+      if (side !== 'long' && side !== 'short') return;
+      if (ui.product === 'CNC' && side === 'short') return;
+      ui.side = side;
+      render();
+      schedule();
+    },
     // Used by the chart: clicking a price sets the stop or the target.
     setField(kind, value) {
       if (!refs.sl) return;
