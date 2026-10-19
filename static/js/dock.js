@@ -208,8 +208,31 @@ export function createDock(root) {
       if (showing !== !!a.orders.length) renderBody(); else ordTable.update(a.orders);
     }
   }));
-  unsub.push(on('prices', () => {
-    if (tab === 'orders' && store.account && store.account.orders.length) ordTable.update(store.account.orders);
+  unsub.push(on('prices', (prices) => {
+    if (tab === 'positions' && store.account && store.account.positions.length) {
+      let anyChanged = false;
+      for (const p of store.account.positions) {
+        const q = prices && prices[p.symbol];
+        if (q && q.p != null && q.p !== p.price) {
+          p.price = q.p;
+          const diff = p.side === 'long' ? (p.price - p.entry) : (p.entry - p.price);
+          p.upnl = diff * p.qty;
+          p.upnl_pct = p.margin ? (p.upnl / p.margin) * 100 : 0;
+          if (p.initial_risk) p.r_now = p.upnl / p.initial_risk;
+          if (p.liq) p.liq_distance_pct = Math.abs(p.price - p.liq) / p.price * 100;
+          anyChanged = true;
+        }
+      }
+      if (anyChanged) {
+        store.account.unrealized = store.account.positions.reduce((sum, x) => sum + (x.upnl || 0), 0);
+        store.account.equity = (store.account.cash || 0) + store.account.unrealized;
+        store.account.day_pnl = (store.account.realized || 0) + store.account.unrealized;
+        posTable.update(store.account.positions);
+        emit('account', store.account);
+      }
+    } else if (tab === 'orders' && store.account && store.account.orders.length) {
+      ordTable.update(store.account.orders);
+    }
   }));
   unsub.push(on('closed', () => { historyStale = true; if (tab === 'history') loadHistory(); }));
 

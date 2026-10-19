@@ -101,7 +101,7 @@ function applyPrices(q, d, open) {
 function startPolling() {
   if (pollTimer) return;
   pollTimer = setInterval(async () => {
-    try { const r = await api('/api/prices'); applyPrices(r.q); } catch (_) { /* retry next tick */ }
+    try { const r = await api('/api/prices'); applyPrices(r.q, r.d); } catch (_) { /* retry next tick */ }
   }, 2000);
 }
 

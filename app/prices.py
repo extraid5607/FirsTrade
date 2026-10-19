@@ -14,10 +14,12 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import math
 import time
-from datetime import date
+from datetime import date, datetime
 
-from .calendar_in import MarketClock
+from . import bs
+from .calendar_in import IST, MarketClock
 from .config import settings
 from .instruments import Instrument, Universe
 from .providers.base import TF_SECONDS, Blocked, Provider, ProviderError, Quote
@@ -25,7 +27,7 @@ from .providers.demo import DemoProvider
 
 log = logging.getLogger("prices")
 
-MAX_SOURCE_GAP = {"equity": 0.015, "index": 0.008, "future": 0.012, "option": 0.30}
+MAX_SOURCE_GAP = {"equity": 0.015, "index": 0.008, "future": 0.012, "option": 2.0}
 MAX_JUMP = {"equity": 0.10, "index": 0.04, "future": 0.06, "option": 2.0}
 MAX_FROM_PREV = {"equity": 0.30, "index": 0.15, "future": 0.30}
 CONFIRM_WITHIN = 60
@@ -160,7 +162,7 @@ class PriceHub:
             self._take(inst, label, q)
             return "ok"
         move = abs(q.price / cur.price - 1)
-        if self._origin.get(inst.id) != label:
+        if self._origin.get(inst.id) != label and label not in ("nse", "groww"):
             if move > MAX_SOURCE_GAP[inst.kind]:
                 log.warning("%s: rejected %s price %.2f, %.2f%% away from %s price %.2f", inst.id,
                             label, q.price, move * 100, self._origin.get(inst.id), cur.price)
@@ -247,6 +249,7 @@ class PriceHub:
             await asyncio.sleep(max(0.5, every - (time.monotonic() - started)))
 
     async def _deriv_loop(self) -> None:
+        last_chain_fetch: dict[tuple[str, date], float] = {}
         while True:
             started = time.monotonic()
             try:
@@ -254,13 +257,76 @@ class PriceHub:
                 self._wanted = {k: v for k, v in self._wanted.items() if v > now}
                 insts = [self.universe.get(k) for k in self._wanted]
                 insts = [i for i in insts if i and i.kind in ("future", "option")]
-                if insts and "groww" in self.providers:
+
+                # 1. Direct provider poll (e.g. Groww if configured with token)
+                groww_p = self.providers.get("groww")
+                if insts and groww_p and getattr(groww_p, "configured", False):
                     await self._poll_into(insts, ["groww"])
+
+                # 2. For option contracts, group by (underlying, expiry) and poll exchange option chain
+                option_pairs = set(
+                    (i.underlying, i.expiry)
+                    for i in insts
+                    if i.kind == "option" and i.underlying and i.expiry
+                )
+                for und, exp in option_pairs:
+                    # Poll chain at most once every 10 seconds per expiry to respect exchange rate limits
+                    if now - last_chain_fetch.get((und, exp), 0.0) >= 10.0:
+                        last_chain_fetch[(und, exp)] = now
+                        try:
+                            await self.chain(und, exp)
+                        except Exception as exc:
+                            log.debug("deriv_loop chain %s %s failed: %s", und, exp, exc)
+
+                # 3. Dynamic Underlying-Tracking (Black-Scholes & Spot Tracking)
+                # Keep option and futures prices moving live in sync with the underlying's real-time spot
+                for inst in insts:
+                    spot = self.underlying_price(inst)
+                    if spot is None or spot <= 0:
+                        continue
+                    cur_q = self.quotes.get(inst.id)
+                    # If we got a fresh exchange quote directly within the last 4 seconds, preserve it
+                    if cur_q and (now - cur_q.ts) < 4.0 and cur_q.source in ("nse", "groww"):
+                        continue
+
+                    t = bs.years_to_expiry(inst.expiry, datetime.now(IST)) if inst.expiry else 0.0
+                    if inst.kind == "option" and inst.opt_type and inst.strike:
+                        vol = getattr(cur_q, "iv", None) if cur_q else None
+                        if vol and vol > 1.0:
+                            vol = vol / 100.0
+                        if not vol or vol <= 0:
+                            if cur_q and cur_q.price > 0 and t > 0:
+                                vol = bs.implied_vol(inst.opt_type, cur_q.price, spot, inst.strike, t)
+                        if not vol or vol <= 0:
+                            base_vol = getattr(inst, "vol", 0.15) or 0.15
+                            vol = bs.smile_vol(base_vol, spot, inst.strike)
+
+                        px = bs.price(inst.opt_type, spot, inst.strike, t, vol)
+                        px = max(round(px / inst.tick) * inst.tick, inst.tick)
+                        half = max(inst.tick, round(px * 0.01 / inst.tick) * inst.tick)
+                        self.quotes[inst.id] = Quote(
+                            price=px, ts=now,
+                            prev_close=cur_q.prev_close if cur_q else None,
+                            source="live_deriv",
+                            bid=max(px - half, inst.tick), ask=px + half,
+                            oi=cur_q.oi if cur_q else None
+                        )
+                        self._origin[inst.id] = "live_deriv"
+                    elif inst.kind == "future":
+                        px = round(spot * math.exp(bs.RATE * t) / inst.tick) * inst.tick
+                        half = max(inst.tick, round(px * 0.0005 / inst.tick) * inst.tick)
+                        self.quotes[inst.id] = Quote(
+                            price=px, ts=now,
+                            prev_close=cur_q.prev_close if cur_q else None,
+                            source="live_deriv",
+                            bid=px - half, ask=px + half
+                        )
+                        self._origin[inst.id] = "live_deriv"
             except asyncio.CancelledError:
                 raise
             except Exception:
                 log.exception("derivative poll crashed")
-            every = 2.0 if self.clock.is_open() else 30.0
+            every = 1.5 if self.clock.is_open() else 30.0
             await asyncio.sleep(max(0.5, every - (time.monotonic() - started)))
 
     # ---- demo ---------------------------------------------------------------------
@@ -352,14 +418,17 @@ class PriceHub:
                 if not leg or leg.get("ltp") is None:
                     continue
                 inst = self.universe.contract(data["underlying"], expiry, row["strike"], ot)
-                if inst is None or inst.id not in self._wanted:
+                if inst is None:
                     continue
                 cur = self.quotes.get(inst.id)
-                if cur and now - cur.ts < 5 and self._origin.get(inst.id) == "groww":
+                if cur and now - cur.ts < 4 and self._origin.get(inst.id) == "groww":
                     continue
-                self._accept(inst, data["source"], Quote(price=leg["ltp"], ts=now, bid=leg.get("bid"),
-                                                         ask=leg.get("ask"), oi=leg.get("oi"),
-                                                         source=data["source"]))
+                q = Quote(price=leg["ltp"], ts=now, bid=leg.get("bid"),
+                          ask=leg.get("ask"), oi=leg.get("oi"),
+                          source=data["source"])
+                if leg.get("iv"):
+                    q.iv = leg["iv"]
+                self._accept(inst, data["source"], q)
 
 
 def _count_sources(quotes: dict[str, Quote]) -> dict:

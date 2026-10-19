@@ -426,7 +426,10 @@ class Engine:
             events += 1
 
         dirty = False
-        for t in list(db.scalars(select(Trade).where(Trade.status == "open"))):
+        open_trades = list(db.scalars(select(Trade).where(Trade.status == "open")))
+        if open_trades:
+            self.hub.want([t.symbol for t in open_trades])
+        for t in open_trades:
             q = self.hub.fresh(t.symbol)
             if q is None:
                 continue

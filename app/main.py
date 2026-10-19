@@ -97,6 +97,10 @@ async def load_universe() -> None:
 # ----------------------------------------------------------------------- background loops
 def _tick_sync() -> None:
     with LOCK, SessionLocal() as db:
+        open_trades = list(db.scalars(select(Trade).where(Trade.status == "open")))
+        pending_orders = list(db.scalars(select(Order).where(Order.status == "pending")))
+        if open_trades or pending_orders:
+            hub.want([t.symbol for t in open_trades] + [o.symbol for o in pending_orders], ttl=90.0)
         engine.process_tick(db)
 
 
@@ -318,7 +322,8 @@ def markets(q: str = Query("", max_length=30), user: User | None = Depends(optio
 
 @app.get("/api/prices")
 def prices(_u: User | None = Depends(data_user)):
-    return {"t": time.time(), "q": hub.snapshot()}
+    wanted = [k for k, v in list(hub._wanted.items()) if v > time.time()][:200]
+    return {"t": time.time(), "q": hub.snapshot(), "d": hub.quote_view(wanted)}
 
 
 @app.get("/api/instrument/{symbol}")
