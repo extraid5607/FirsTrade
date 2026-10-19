@@ -14,3 +14,4 @@ venv/
 !requirements-dev.txt
 angel_scrip_master.json
 data/*.json
+logs/
