@@ -294,10 +294,11 @@ class PriceHub:
                         continue
                     cur_q = self.quotes.get(inst.id)
                     # Real exchange quote is authoritative: never overwrite with synthetic model
-                    if cur_q and cur_q.source in ("angel", "nse", "groww") and (now - cur_q.ts) < settings.stale_after:
+                    if cur_q and cur_q.source in ("angel", "nse", "groww"):
                         continue
-
                     t = bs.years_to_expiry(inst.expiry, datetime.now(IST)) if inst.expiry else 0.0
+                    if t <= 0.0005:
+                        continue
                     if inst.kind == "option" and inst.opt_type and inst.strike:
                         vol = getattr(cur_q, "iv", None) if cur_q else None
                         if vol and vol > 1.0:

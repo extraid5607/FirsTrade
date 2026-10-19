@@ -30,10 +30,10 @@ BASE = "https://apiconnect.angelone.in"
 MASTER_URL = "https://margincalculator.angelbroking.com/OpenAPI_File/files/OpenAPIScripMaster.json"
 
 INDICES_MAP = {
-    "NIFTY": ("NSE", "99926000"),
-    "BANKNIFTY": ("NSE", "99926009"),
-    "FINNIFTY": ("NSE", "99926037"),
-    "MIDCPNIFTY": ("NSE", "99926074"),
+    "NIFTY": ("NSE", "26000"),
+    "BANKNIFTY": ("NSE", "26009"),
+    "FINNIFTY": ("NSE", "26037"),
+    "MIDCPNIFTY": ("NSE", "26074"),
 }
 
 INTERVAL_MAP = {
@@ -298,7 +298,7 @@ class AngelProvider(Provider):
 
             try:
                 r = await self._http.post(
-                    f"{BASE}/rest/secure/angelbroking/market/v1/quote/",
+                    f"{BASE}/rest/secure/angelbroking/market/v1/quote",
                     json={"mode": "FULL", "exchangeTokens": by_exch},
                     headers=self._headers(jwt),
                     timeout=8.0,
@@ -367,7 +367,7 @@ class AngelProvider(Provider):
         if und_token:
             try:
                 r_und = await self._http.post(
-                    f"{BASE}/rest/secure/angelbroking/market/v1/quote/",
+                    f"{BASE}/rest/secure/angelbroking/market/v1/quote",
                     json={"mode": "LTP", "exchangeTokens": {und_exch: [und_token]}},
                     headers=self._headers(jwt),
                     timeout=5.0,
@@ -410,7 +410,7 @@ class AngelProvider(Provider):
         for batch in [tokens_to_fetch[i:i + 50] for i in range(0, len(tokens_to_fetch), 50)]:
             try:
                 r = await self._http.post(
-                    f"{BASE}/rest/secure/angelbroking/market/v1/quote/",
+                    f"{BASE}/rest/secure/angelbroking/market/v1/quote",
                     json={"mode": "FULL", "exchangeTokens": {"NFO": batch}},
                     headers=self._headers(jwt),
                     timeout=8.0,
