@@ -93,14 +93,22 @@ class PriceHub:
             self._wanted[i] = max(self._wanted.get(i, 0), until)
 
     def last(self, iid: str) -> Quote | None:
+        if not iid:
+            return None
         if self.demo_feed:
             inst = self.universe.get(iid)
             if inst is None:
                 return None
             if inst.kind in ("equity", "index"):
-                return self.quotes.get(iid)
+                return self.quotes.get(inst.id) or self.quotes.get(iid)
             return self.demo_feed.quote(inst)
-        return self.quotes.get(iid)
+        q = self.quotes.get(iid)
+        if q is not None:
+            return q
+        inst = self.universe.get(iid)
+        if inst and inst.id != iid:
+            return self.quotes.get(inst.id)
+        return None
 
     def fresh(self, iid: str) -> Quote | None:
         """The latest quote, or None when the market is closed or the feed is stale."""
@@ -402,12 +410,13 @@ class PriceHub:
         return data
 
     def _fill_ids(self, data: dict, und: str, expiry: date) -> None:
-        for row in data["rows"]:
+        for row in data.get("rows", []):
             for key, ot in (("ce", "CE"), ("pe", "PE")):
                 leg = row.get(key)
-                if leg is not None and not leg.get("id"):
+                if leg is not None:
                     inst = self.universe.contract(und, expiry, row["strike"], ot)
-                    leg["id"] = inst.id if inst else None
+                    if inst:
+                        leg["id"] = inst.id
 
     def _ingest_chain(self, data: dict, expiry: date) -> None:
         """Use the chain's prices for contracts the direct feed is not giving us."""

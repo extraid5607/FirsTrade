@@ -448,8 +448,10 @@ class AngelProvider(Provider):
                 greeks = bs.greeks(ot, und_ltp, stk, t_years, iv or 0.15) if (und_ltp > 0 and t_years > 0) else {}
 
                 key = "ce" if ot == "CE" else "pe"
+                canon_inst = self.u.contract(und, expiry, stk, ot) if self.u else None
+                inst_id = canon_inst.id if canon_inst else cand["symbol"]
                 row[key] = {
-                    "id": cand["symbol"],
+                    "id": inst_id,
                     "ltp": ltp,
                     "bid": bid,
                     "ask": ask,

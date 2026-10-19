@@ -136,6 +136,7 @@ class Instrument:
 class Universe:
     def __init__(self) -> None:
         self.items: dict[str, Instrument] = {}
+        self._aliases: dict[str, str] = {}
         self._opts: dict[tuple[str, date], dict[float, dict[str, str]]] = {}
         self._futs: dict[str, list[Instrument]] = {}
         self.skipped: dict[str, int] = {}
@@ -144,15 +145,40 @@ class Universe:
         self.items[i.id] = i
         if i.kind == "option" and i.expiry and i.strike is not None and i.opt_type:
             self._opts.setdefault((i.underlying, i.expiry), {}).setdefault(i.strike, {})[i.opt_type] = i.id
-        elif i.kind == "future":
+            strike_val = int(i.strike) if i.strike.is_integer() else i.strike
+            angel_sym = f"{i.underlying}{i.expiry:%d%b%y}{strike_val}{i.opt_type}".upper()
+            self._aliases[angel_sym] = i.id
+            self._aliases[f"NSE_{angel_sym}"] = i.id
+            self._aliases[f"NFO_{angel_sym}"] = i.id
+        elif i.kind == "future" and i.expiry:
             self._futs.setdefault(i.underlying, []).append(i)
             self._futs[i.underlying].sort(key=lambda x: x.expiry)
+            fut_sym = f"{i.underlying}{i.expiry:%d%b%y}FUT".upper()
+            self._aliases[fut_sym] = i.id
+            self._aliases[f"{i.id}FUT"] = i.id
+            self._aliases[f"NSE_{fut_sym}"] = i.id
+            self._aliases[f"NFO_{fut_sym}"] = i.id
+        elif i.kind == "equity":
+            self._aliases[f"{i.id}-EQ"] = i.id
+            self._aliases[f"NSE_{i.id}"] = i.id
 
     def get(self, iid: str) -> Instrument | None:
-        return self.items.get(iid)
+        if not iid:
+            return None
+        inst = self.items.get(iid)
+        if inst is not None:
+            return inst
+        alias = self._aliases.get(iid) or self._aliases.get(iid.upper())
+        if alias and alias in self.items:
+            return self.items[alias]
+        clean = iid.replace("NSE_", "").replace("NFO_", "").strip().upper()
+        alias = self._aliases.get(clean)
+        if alias and alias in self.items:
+            return self.items[alias]
+        return None
 
     def __contains__(self, iid: str) -> bool:
-        return iid in self.items
+        return iid in self.items or iid in self._aliases or iid.upper() in self._aliases
 
     def underlyings(self) -> list[str]:
         return sorted({u for (u, _e) in self._opts} | set(self._futs))

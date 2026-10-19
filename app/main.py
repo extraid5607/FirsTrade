@@ -518,7 +518,7 @@ def risk_size(symbol: str, side: str = Query(pattern="^(long|short)$"),
         raise HTTPException(400, "Sizing by risk needs a stop-loss price.")
     ref = entry
     if ref is None:
-        q = hub.last(symbol)
+        q = hub.last(inst.id) or hub.last(symbol)
         if q is None:
             raise HTTPException(503, "No price yet for this instrument.")
         ref = q.price

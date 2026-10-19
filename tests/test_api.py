@@ -173,3 +173,25 @@ def test_live_mode_keeps_prices_private(client):
             assert "q" in ws.receive_json()
     finally:
         object.__setattr__(settings, "price_source", "demo")
+
+
+def test_order_and_preview_with_alias_symbols(client):
+    register(client, "trader_alias")
+    opt = next(i for i in main.hub.universe.items.values() if i.kind == "option")
+    strike_val = int(opt.strike) if opt.strike.is_integer() else opt.strike
+    angel_sym = f"{opt.underlying}{opt.expiry:%d%b%y}{strike_val}{opt.opt_type}".upper()
+
+    # Risk size preview accepts Angel One symbol format
+    r_size = client.get(f"/api/risk/size?symbol={angel_sym}&side=long&product=NRML&lots=1")
+    assert r_size.status_code == 200
+
+    # Order placement accepts Angel One symbol format
+    r_ord = client.post("/api/orders", json={"symbol": angel_sym, "side": "long", "product": "NRML", "lots": 1}, headers=H)
+    assert r_ord.status_code == 200
+    pos = r_ord.json()["account"]["positions"]
+    assert any(p["symbol"] == opt.id for p in pos)
+
+    # Order placement accepts equity -EQ alias
+    r_eq = client.post("/api/orders", json={"symbol": "RELIANCE-EQ", "side": "long", "product": "CNC", "qty": 1}, headers=H)
+    assert r_eq.status_code == 200
+
