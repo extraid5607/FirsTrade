@@ -47,8 +47,12 @@ class Settings:
     app_name: str
     database_url: str
     price_source: str                 # "live" or "demo"
-    providers: tuple[str, ...]        # live cash-price sources, in order: groww, yahoo
-    chain_providers: tuple[str, ...]  # live option-chain sources, in order: groww, nse
+    providers: tuple[str, ...]        # live cash-price sources, in order: angel, groww, yahoo
+    chain_providers: tuple[str, ...]  # live option-chain sources, in order: angel, groww, nse
+    angel_api_key: str
+    angel_client_code: str
+    angel_mpin: str
+    angel_totp_secret: str
     groww_access_token: str
     groww_api_key: str
     groww_api_secret: str
@@ -72,15 +76,46 @@ class Settings:
     default_daily_loss_pct: float
 
 
+def _read_angel_file() -> dict[str, str]:
+    from pathlib import Path
+    for p in [Path("Angel one API.txt"), Path("angel_api.txt"), Path("data/Angel one API.txt")]:
+        if p.is_file():
+            try:
+                res = {}
+                for line in p.read_text(encoding="utf-8").splitlines():
+                    line = line.strip()
+                    if "=" in line and not line.startswith("#"):
+                        k, v = line.split("=", 1)
+                        k, v = k.strip().upper(), v.strip()
+                        if "CONSUMER_KEY" in k or "API_KEY" in k:
+                            res["api_key"] = v
+                        elif "CLIENT" in k:
+                            res["client_code"] = v
+                        elif "MPIN" in k:
+                            res["mpin"] = v
+                        elif "TOTP" in k:
+                            res["totp_secret"] = v
+                if res.get("api_key") and res.get("client_code"):
+                    return res
+            except Exception:
+                pass
+    return {}
+
+
 def load_settings() -> Settings:
     source = os.getenv("PRICE_SOURCE", "live").strip().lower()
     demo = source == "demo"
+    angel_f = _read_angel_file()
     return Settings(
         app_name=os.getenv("APP_NAME", "FirsTrade"),
         database_url=_database_url(),
         price_source=source,
-        providers=_list("PROVIDERS", "groww,yahoo"),
-        chain_providers=_list("CHAIN_PROVIDERS", "groww,nse"),
+        providers=_list("PROVIDERS", "angel,groww,yahoo"),
+        chain_providers=_list("CHAIN_PROVIDERS", "angel,groww,nse"),
+        angel_api_key=os.getenv("ANGEL_API_KEY", "").strip() or os.getenv("CONSUMER_KEY", "").strip() or angel_f.get("api_key", ""),
+        angel_client_code=os.getenv("ANGEL_CLIENT_CODE", "").strip() or os.getenv("ANGELONE_CLIENT_ID", "").strip() or angel_f.get("client_code", ""),
+        angel_mpin=os.getenv("ANGEL_MPIN", "").strip() or os.getenv("MPIN", "").strip() or angel_f.get("mpin", ""),
+        angel_totp_secret=os.getenv("ANGEL_TOTP_SECRET", "").strip() or os.getenv("TOTP_SECRET", "").strip() or angel_f.get("totp_secret", ""),
         groww_access_token=os.getenv("GROWW_ACCESS_TOKEN", "").strip(),
         groww_api_key=os.getenv("GROWW_API_KEY", "").strip(),
         groww_api_secret=os.getenv("GROWW_API_SECRET", "").strip(),

@@ -7,9 +7,10 @@ venv/
 *.db
 *.db-shm
 *.db-wal
-Angel*
 *.token
 *.key
 *.txt
 !requirements.txt
 !requirements-dev.txt
+angel_scrip_master.json
+data/*.json

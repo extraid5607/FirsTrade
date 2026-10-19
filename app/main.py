@@ -24,6 +24,7 @@ from .db import SessionLocal, Snapshot, Trade, User, init_db
 from .engine import LOCK, Engine, TradeError
 from .instruments import INSTRUMENT_CSV_URL, build_demo_universe, parse_groww_csv
 from .prices import PriceHub
+from .providers.angel import AngelProvider
 from .providers.base import TF_SECONDS
 from .providers.groww import GrowwProvider
 from .providers.nse import NseProvider
@@ -43,21 +44,30 @@ cal = MarketCalendar()
 clock = MarketClock(cal, force_open=settings.force_market_open, squareoff=settings.squareoff_time)
 
 
-def _make_hub() -> tuple[PriceHub, GrowwProvider | None]:
+def _make_hub() -> tuple[PriceHub, GrowwProvider | None, AngelProvider | None]:
     if DEMO:
-        return PriceHub(build_demo_universe(cal, clock.today()), clock, demo=True), None
+        return PriceHub(build_demo_universe(cal, clock.today()), clock, demo=True), None, None
     uni = build_demo_universe(cal, clock.today(), derivatives=False)   # stocks + indices until Groww's list loads
+    angel = AngelProvider(uni)
     groww = GrowwProvider(uni)
-    providers = {"groww": groww}
+    providers = {}
+    if "angel" in settings.providers:
+        providers["angel"] = angel
+    if "groww" in settings.providers:
+        providers["groww"] = groww
     if "yahoo" in settings.providers:
         providers["yahoo"] = YahooProvider()
-    chain = {"groww": groww}
+    chain = {}
+    if "angel" in settings.chain_providers:
+        chain["angel"] = angel
+    if "groww" in settings.chain_providers:
+        chain["groww"] = groww
     if "nse" in settings.chain_providers:
         chain["nse"] = NseProvider(uni)
-    return PriceHub(uni, clock, demo=False, providers=providers, chain_providers=chain), groww
+    return PriceHub(uni, clock, demo=False, providers=providers, chain_providers=chain), groww, angel
 
 
-hub, groww_provider = _make_hub()
+hub, groww_provider, angel_provider = _make_hub()
 engine = Engine(hub, clock)
 login_limiter = auth.RateLimiter(limit=10, window=300)
 register_limiter = auth.RateLimiter(limit=5, window=3600)
@@ -393,8 +403,9 @@ async def candles(symbol: str = Query(max_length=40), tf: str = "15m",
 @app.get("/api/health")
 def health():
     g = groww_provider.status() if groww_provider else None
+    a = angel_provider.status() if angel_provider else None
     return {"ok": True, "price_source": settings.price_source, "market": clock.status(),
-            "hub": hub.status(), "groww": g, "charges": {"verified": False},
+            "hub": hub.status(), "groww": g, "angel": a, "charges": {"verified": False},
             "invite_code_set": bool(settings.invite_code)}
 
 

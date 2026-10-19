@@ -22,3 +22,11 @@ services:
         sync: false
       - key: DATABASE_URL
         sync: false
+      - key: ANGEL_API_KEY
+        sync: false
+      - key: ANGEL_CLIENT_CODE
+        sync: false
+      - key: ANGEL_MPIN
+        sync: false
+      - key: ANGEL_TOTP_SECRET
+        sync: false

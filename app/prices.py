@@ -162,7 +162,7 @@ class PriceHub:
             self._take(inst, label, q)
             return "ok"
         move = abs(q.price / cur.price - 1)
-        if self._origin.get(inst.id) != label and label not in ("nse", "groww"):
+        if self._origin.get(inst.id) != label and label not in ("angel", "nse", "groww"):
             if move > MAX_SOURCE_GAP[inst.kind]:
                 log.warning("%s: rejected %s price %.2f, %.2f%% away from %s price %.2f", inst.id,
                             label, q.price, move * 100, self._origin.get(inst.id), cur.price)
@@ -258,10 +258,10 @@ class PriceHub:
                 insts = [self.universe.get(k) for k in self._wanted]
                 insts = [i for i in insts if i and i.kind in ("future", "option")]
 
-                # 1. Direct provider poll (e.g. Groww if configured with token)
-                groww_p = self.providers.get("groww")
-                if insts and groww_p and getattr(groww_p, "configured", False):
-                    await self._poll_into(insts, ["groww"])
+                # 1. Direct exchange provider poll (Angel One first, then Groww)
+                direct_providers = [p for p in ["angel", "groww"] if p in self.providers and getattr(self.providers[p], "configured", False)]
+                if insts and direct_providers:
+                    await self._poll_into(insts, direct_providers)
 
                 # 2. For option contracts, group by (underlying, expiry) and poll exchange option chain
                 option_pairs = set(
@@ -278,15 +278,15 @@ class PriceHub:
                         except Exception as exc:
                             log.debug("deriv_loop chain %s %s failed: %s", und, exp, exc)
 
-                # 3. Dynamic Underlying-Tracking (Black-Scholes & Spot Tracking)
+                # 3. Dynamic Underlying-Tracking (Fallback when no exchange quote is available)
                 # Keep option and futures prices moving live in sync with the underlying's real-time spot
                 for inst in insts:
                     spot = self.underlying_price(inst)
                     if spot is None or spot <= 0:
                         continue
                     cur_q = self.quotes.get(inst.id)
-                    # If we got a fresh exchange quote directly within the last 4 seconds, preserve it
-                    if cur_q and (now - cur_q.ts) < 4.0 and cur_q.source in ("nse", "groww"):
+                    # Real exchange quote is authoritative: never overwrite with synthetic model
+                    if cur_q and cur_q.source in ("angel", "nse", "groww") and (now - cur_q.ts) < settings.stale_after:
                         continue
 
                     t = bs.years_to_expiry(inst.expiry, datetime.now(IST)) if inst.expiry else 0.0
