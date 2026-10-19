@@ -468,6 +468,7 @@ class AngelProvider(Provider):
             "underlying": und,
             "expiry": expiry.isoformat(),
             "underlying_price": und_ltp,
+            "underlying_ltp": und_ltp,
             "lot_size": lot_size,
             "summary": summary,
             "rows": rows,

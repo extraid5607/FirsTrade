@@ -85,7 +85,7 @@ export function renderChain(root) {
     }
     if (!data) { mount(tableWrap, h('p', { class: 'empty' }, 'Loading the option chain…')); return; }
     const s = data.summary || {};
-    const spot = data.underlying_ltp;
+    const spot = data.underlying_ltp != null ? data.underlying_ltp : data.underlying_price;
     mount(metaEl,
       h('span', null, `${state.under} `, h('strong', null, spot != null ? num(spot, 2) : '–')),
       h('span', null, 'At the money ', h('strong', null, s.atm != null ? num(s.atm, 0) : '–')),
